@@ -1,0 +1,48 @@
+name: Segnalazione di bug
+description: Segnala un comportamento riproducibile senza includere dati privati.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Non inserire chiavi API, URL firmati, sottotitoli, video o log non filtrati.
+  - type: input
+    id: version
+    attributes:
+      label: Versione
+      placeholder: 0.12.1
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: Versione di macOS e Mac
+      placeholder: macOS 15, Apple Silicon
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passaggi per riprodurre
+      description: Usa nomi e contenuti inventati.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Risultato atteso
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Risultato osservato
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Controllo privacy
+      options:
+        - label: Ho rimosso chiavi, dati personali e contenuti protetti dalla segnalazione.
+          required: true

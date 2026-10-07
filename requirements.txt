@@ -1,0 +1,2 @@
+# Runtime dependencies. For development use: pip install -e '.[dev]'
+tiktoken>=0.11,<1

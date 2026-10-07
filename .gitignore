@@ -1,0 +1,63 @@
+# Secrets and local configuration
+.env*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editors and macOS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Local work, packages and generated output
+work/
+outputs/
+build/
+dist/
+*.app/
+*.dmg
+*.spec
+src/*.zip
+docs/images/
+docs/analisi-interfaccia-download-0.9.4.md
+docs/caso-reale-giapponese-otsuka.md
+docs/flusso-unico-e-risultati-0.7.1.md
+docs/francese-0.12.1.md
+docs/interfaccia-e-ripresa-0.7.md
+docs/interfaccia-mac-sobria-0.8.0.md
+docs/piano-di-sviluppo.md
+docs/prossimo-sviluppo-download-e-affidabilita.md
+docs/restyling-ux-0.12.0.md
+docs/revisione-validazione-per-sottotitolo.md
+docs/scheda-informativa-txt-0.9.0.md
+
+# User media, subtitles, logs and job data
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.mp3
+*.m4a
+*.wav
+*.opus
+*.srt
+*.log
+job.json
+revision.json
+download.json
+
+# Downloaded build dependencies (licenses and metadata remain tracked)
+vendor/downloads/
+vendor/macos-arm64/deno
+vendor/macos-arm64/yt-dlp_macos

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-sottotitoli"
+version = "0.12.1"
+description = "Applicazione macOS per trascrivere, tradurre e migliorare sottotitoli SRT."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Diego De Angelis" }]
+keywords = ["subtitles", "srt", "transcription", "translation", "macos"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: MacOS X",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = ["tiktoken>=0.11,<1"]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.12,<1", "pip-audit>=2.9,<3"]
+packaging = ["pyinstaller>=6,<7"]
+
+[project.gui-scripts]
+video-sottotitoli = "video_sottotitoli.gui:main"
+
+[project.urls]
+Repository = "https://github.com/Dago86/video-sottotitoli"
+Issues = "https://github.com/Dago86/video-sottotitoli/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
