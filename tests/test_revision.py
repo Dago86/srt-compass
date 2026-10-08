@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from video_sottotitoli.config import MODEL_MINI
 from video_sottotitoli.models import Caption
 from video_sottotitoli.revision import (
     OPERATION_TRANSLATION,
@@ -283,8 +284,10 @@ class RevisionTests(unittest.TestCase):
 
     def test_linguistic_estimate_reflects_larger_output_margin(self) -> None:
         captions = [Caption(0, 1, ("hello world",)) for _ in range(20)]
-        conservative = estimate_revision(captions)
-        linguistic = estimate_revision(captions, mode=REVISION_MODE_LINGUISTIC)
+        conservative = estimate_revision(captions, model=MODEL_MINI)
+        linguistic = estimate_revision(
+            captions, mode=REVISION_MODE_LINGUISTIC, model=MODEL_MINI
+        )
         self.assertGreater(linguistic.output_tokens, conservative.output_tokens)
         self.assertGreater(linguistic.cost_usd, conservative.cost_usd)
 
