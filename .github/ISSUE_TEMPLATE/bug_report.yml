@@ -1,48 +1,48 @@
-name: Segnalazione di bug
-description: Segnala un comportamento riproducibile senza includere dati privati.
+name: Bug report
+description: Report reproducible behavior without including private data.
 title: "[Bug] "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Non inserire chiavi API, URL firmati, sottotitoli, video o log non filtrati.
+      value: Never include API keys, signed URLs, subtitles, videos or unfiltered logs.
   - type: input
     id: version
     attributes:
-      label: Versione
-      placeholder: 0.12.1
+      label: Version
+      placeholder: 0.13.0
     validations:
       required: true
   - type: input
     id: macos
     attributes:
-      label: Versione di macOS e Mac
+      label: macOS version and Mac
       placeholder: macOS 15, Apple Silicon
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Passaggi per riprodurre
-      description: Usa nomi e contenuti inventati.
+      label: Steps to reproduce
+      description: Use invented names and content.
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Risultato atteso
+      label: Expected result
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Risultato osservato
+      label: Observed result
     validations:
       required: true
   - type: checkboxes
     id: privacy
     attributes:
-      label: Controllo privacy
+      label: Privacy check
       options:
-        - label: Ho rimosso chiavi, dati personali e contenuti protetti dalla segnalazione.
+        - label: I removed keys, personal data and protected content.
           required: true

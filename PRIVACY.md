@@ -1,35 +1,25 @@
-# Privacy e servizi esterni
+# Privacy and external services
 
-Video Sottotitoli è un'applicazione locale e non gestisce un proprio server.
-Alcune funzioni inviano dati a servizi esterni soltanto dopo un'azione esplicita
-dell'utente.
+SRT Compass is a local application and does not operate its own server. Some
+features send data to external services only after an explicit user action.
 
 ## OpenAI
 
-- La trascrizione invia l'audio estratto dall'intervallo selezionato.
-- Traduzione e revisione inviano testo dei sottotitoli e contesto facoltativo.
-- La scheda informativa invia il testo dell'SRT e può usare la ricerca web.
-- La chiave API viene letta dall'ambiente o dal Portachiavi macOS. Il fallback
-  `.env.local` è destinato esclusivamente allo sviluppo.
+- Transcription sends audio extracted from the selected time range.
+- Translation and revision send subtitle text and optional context.
+- The optional TXT brief sends SRT text and may use web search.
+- The API key is read from the environment or macOS Keychain. The
+  `.env.local` fallback is for development only.
 
-Consultare le condizioni e la documentazione sulla privacy di OpenAI prima
-dell'uso. Non allegare chiavi API, sottotitoli o log a segnalazioni pubbliche.
+## Link downloads
 
-## Download da link
+The public page URL is passed to the local yt-dlp process. The source website
+receives normal connection data such as the user's IP address. SRT Compass
+filters likely credentials and temporary media URLs from logs.
 
-L'URL pubblico viene passato al processo locale yt-dlp. Il sito di origine può
-ricevere indirizzo IP e altri normali dati della connessione. L'app filtra dal
-registro parametri che sembrano credenziali o URL multimediali temporanei.
+## Local data
 
-## Banca Centrale Europea
-
-Le versioni che convertono le stime in euro possono recuperare il cambio di
-riferimento pubblico della BCE. La richiesta non contiene audio, sottotitoli o
-chiavi API.
-
-## Dati locali
-
-Registri, risposte e file temporanei sono conservati sotto
-`~/Library/Application Support/VideoSottotitoli/` per consentire la ripresa. La
-finestra **Spazio e file temporanei** permette di rimuovere i parziali dei
-download inattivi. I file finali vengono salvati nella destinazione scelta.
+Jobs, responses and temporary files remain under
+`~/Library/Application Support/VideoSottotitoli/` for resume support. The
+**Storage and temporary files** window can remove partial files from inactive
+downloads. Final files are saved only to the chosen destination.

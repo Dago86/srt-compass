@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -13,14 +14,13 @@ from typing import Any, ClassVar
 
 from .config import (
     DOWNLOAD_JOBS_DIR,
-    LANGUAGE_CODES_BY_LABEL,
     LANGUAGE_NAMES,
     LANGUAGES,
     MODEL_MINI,
     MODEL_SOL,
     MODEL_SOL_LEGACY,
+    PREFERENCES_PATH,
     REVISION_JOBS_DIR,
-    SOURCE_LANGUAGE_CODES_BY_LABEL,
     SOURCE_LANGUAGES,
     estimate_cost_usd,
     load_api_key,
@@ -36,6 +36,15 @@ from .downloader import (
     resumable_page_url,
     safe_output_stem,
     validate_selected_format,
+)
+from .i18n import (
+    get_locale,
+    language_code,
+    language_label,
+    load_locale,
+    save_locale,
+    set_locale,
+    tr,
 )
 from .jobs import fingerprint, load_job, save_job
 from .media import probe_media
@@ -74,28 +83,28 @@ class EventLogPanel(ttk.Frame):
         header = ttk.Frame(self)
         header.pack(fill="x")
         self.toggle_button = ttk.Button(
-            header, text="Mostra dettagli", command=self.toggle
+            header, text=tr("details.show"), command=self.toggle
         )
         self.toggle_button.pack(side="left")
         self.details = ttk.Frame(self)
-        self.filter_var = tk.StringVar(value="Tutti gli eventi")
+        self.filter_var = tk.StringVar(value=tr("details.all"))
         self.filter_combo = ttk.Combobox(
             self.details, textvariable=self.filter_var, state="readonly", width=19,
-            values=("Tutti gli eventi", "Avvisi ed errori"),
+            values=(tr("details.all"), tr("details.warnings")),
         )
         self.filter_combo.pack(side="left", padx=(8, 0))
         self.filter_combo.bind("<<ComboboxSelected>>", self._filter_changed)
         self.latest_button = ttk.Button(
-            self.details, text="Vai agli ultimi eventi", command=self.go_latest,
+            self.details, text=tr("details.latest"), command=self.go_latest,
             state="disabled",
         )
         self.latest_button.pack(side="left", padx=(8, 0))
         self.copy_button = ttk.Button(
-            self.details, text="Copia diagnostica", command=self.copy_diagnostics
+            self.details, text=tr("details.copy"), command=self.copy_diagnostics
         )
         self.copy_button.pack(side="left", padx=(8, 0))
         self.open_button = ttk.Button(
-            self.details, text="Apri log", command=self.open_log, state="disabled"
+            self.details, text=tr("details.open_log"), command=self.open_log, state="disabled"
         )
         self.open_button.pack(side="right")
         body = ttk.Frame(self)
@@ -111,11 +120,11 @@ class EventLogPanel(ttk.Frame):
         if self.expanded:
             self.details.pack(fill="x", pady=(6, 0))
             self.body.pack(fill="both", expand=True, pady=(6, 0))
-            self.toggle_button.configure(text="Nascondi dettagli")
+            self.toggle_button.configure(text=tr("details.hide"))
         else:
             self.body.pack_forget()
             self.details.pack_forget()
-            self.toggle_button.configure(text="Mostra dettagli")
+            self.toggle_button.configure(text=tr("details.show"))
 
     def set_log(self, path: str) -> None:
         if not path or self.path == path:
@@ -171,7 +180,9 @@ class EventLogPanel(ttk.Frame):
         self.text.see("end")
 
     def _filter_changed(self, _event: object | None = None) -> None:
-        self.filter_errors = self.filter_var.get() == "Avvisi ed errori"
+        self.filter_errors = self.filter_var.get() in {
+            tr("details.warnings"), "Avvisi ed errori", "Warnings and errors"
+        }
         self.text.configure(state="normal")
         self._render(keep_position=False)
         self.text.configure(state="disabled")
@@ -291,17 +302,35 @@ def _download_progress_display(value: dict[str, Any]) -> tuple[str, float | None
 
 
 class DownloadDialog(tk.Toplevel):
+    # Kept for compatibility with callers that inspect the former public map.
     QUALITY: ClassVar[dict[str, str]] = {
         "Video e audio · max 1080p": "1080p",
         "Video e audio · max 720p": "720p",
         "Video e audio · migliore disponibile": "best",
         "Solo audio": "audio",
     }
+    QUALITY_CODES: ClassVar[tuple[str, ...]] = ("1080p", "720p", "best", "audio")
+
+    @staticmethod
+    def quality_labels() -> dict[str, str]:
+        if get_locale() == "it":
+            return {
+                "Video e audio · max 1080p": "1080p",
+                "Video e audio · max 720p": "720p",
+                "Video e audio · migliore disponibile": "best",
+                "Solo audio": "audio",
+            }
+        return {
+            "Video and audio · max 1080p": "1080p",
+            "Video and audio · max 720p": "720p",
+            "Video and audio · best available": "best",
+            "Audio only": "audio",
+        }
 
     def __init__(self, master: tk.Tk, app: App):
         super().__init__(master)
         self.app = app
-        self.title("Scarica da un link")
+        self.title(tr("dialog.download.title"))
         self.minsize(650, 640)
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: DownloadWorker | None = None
@@ -313,15 +342,15 @@ class DownloadDialog(tk.Toplevel):
         self.cleanup_events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.cleanup_in_progress = False
         self.url_var = tk.StringVar()
-        self.quality_var = tk.StringVar(value="Video e audio · max 1080p")
-        self.audio_language_var = tk.StringVar(value="Traccia predefinita del sito")
+        self.quality_var = tk.StringVar(value=next(iter(self.quality_labels())))
+        self.audio_language_var = tk.StringVar(value=tr("dialog.download.default_track"))
         self.destination_var = tk.StringVar(
-            value=str(Path.home() / "Downloads" / "Video Sottotitoli")
+            value=str(Path.home() / "Downloads" / "SRT Compass")
         )
         self.filename_var = tk.StringVar(value="")
-        self.info_var = tk.StringVar(value="Incolla il link di un singolo video pubblico e analizzalo.")
+        self.info_var = tk.StringVar(value=tr("dialog.download.paste"))
         self.progress_var = tk.StringVar(value="")
-        self.status_var = tk.StringVar(value="Pronto.")
+        self.status_var = tk.StringVar(value=tr("dialog.download.ready"))
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._request_close)
         self.after(100, self._poll)
@@ -330,10 +359,10 @@ class DownloadDialog(tk.Toplevel):
         frame = ttk.Frame(self, padding=18)
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(0, weight=1)
-        ttk.Label(frame, text="Scarica un video", font=("Helvetica", 16, "bold")).grid(
+        ttk.Label(frame, text=tr("dialog.download.heading"), font=("Helvetica", 16, "bold")).grid(
             row=0, column=0, sticky="w", pady=(0, 12)
         )
-        ttk.Label(frame, text="Link pubblico").grid(row=1, column=0, sticky="w")
+        ttk.Label(frame, text=tr("dialog.download.public_link")).grid(row=1, column=0, sticky="w")
         entry_row = ttk.Frame(frame)
         entry_row.grid(row=2, column=0, sticky="ew", pady=(3, 8))
         entry_row.columnconfigure(0, weight=1)
@@ -341,46 +370,46 @@ class DownloadDialog(tk.Toplevel):
         self.url_entry.grid(row=0, column=0, sticky="ew")
         self.url_var.trace_add("write", self._url_changed)
         self.analyze_button = ttk.Button(
-            entry_row, text="Analizza link", command=self.analyze
+            entry_row, text=tr("dialog.download.analyze"), command=self.analyze
         )
         self.analyze_button.grid(row=0, column=1, padx=(8, 0))
         ttk.Label(frame, textvariable=self.info_var, wraplength=590).grid(
             row=3, column=0, sticky="w", pady=(3, 10)
         )
-        settings = ttk.LabelFrame(frame, text="Video da scaricare", padding=10)
+        settings = ttk.LabelFrame(frame, text=tr("dialog.download.video"), padding=10)
         settings.grid(row=4, column=0, sticky="ew")
         settings.columnconfigure(1, weight=1)
-        ttk.Label(settings, text="Formato").grid(row=0, column=0, sticky="w")
+        ttk.Label(settings, text=tr("dialog.download.format")).grid(row=0, column=0, sticky="w")
         self.quality_combo = ttk.Combobox(
             settings, state="readonly", textvariable=self.quality_var,
-            values=list(self.QUALITY),
+            values=list(self.quality_labels()),
         )
         self.quality_combo.grid(row=0, column=1, sticky="ew", padx=(8, 0))
         self.quality_combo.bind("<<ComboboxSelected>>", self._quality_changed)
-        ttk.Label(settings, text="Traccia audio").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text=tr("dialog.download.audio")).grid(row=1, column=0, sticky="w", pady=(8, 0))
         self.audio_combo = ttk.Combobox(
             settings, state="readonly", textvariable=self.audio_language_var,
-            values=["Traccia predefinita del sito"],
+            values=[tr("dialog.download.default_track")],
         )
         self.audio_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
-        ttk.Label(settings, text="Nome del file").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(settings, text=tr("dialog.download.filename")).grid(row=2, column=0, sticky="w", pady=(8, 0))
         self.filename_entry = ttk.Entry(settings, textvariable=self.filename_var)
         self.filename_entry.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
-        ttk.Label(settings, text="L’estensione viene aggiunta automaticamente").grid(
+        ttk.Label(settings, text=tr("dialog.download.extension")).grid(
             row=3, column=1, sticky="w", padx=(8, 0), pady=(2, 0)
         )
-        destination = ttk.LabelFrame(frame, text="Salvataggio", padding=10)
+        destination = ttk.LabelFrame(frame, text=tr("dialog.download.save"), padding=10)
         destination.grid(row=5, column=0, sticky="ew", pady=(8, 0))
         destination.columnconfigure(1, weight=1)
-        ttk.Label(destination, text="Cartella").grid(row=0, column=0, sticky="w")
+        ttk.Label(destination, text=tr("dialog.download.folder")).grid(row=0, column=0, sticky="w")
         ttk.Entry(destination, textvariable=self.destination_var, state="readonly").grid(
             row=0, column=1, sticky="ew", padx=(8, 0)
         )
         self.destination_button = ttk.Button(
-            destination, text="Scegli…", command=self.choose_destination
+            destination, text=tr("main.choose"), command=self.choose_destination
         )
         self.destination_button.grid(row=0, column=2, padx=(8, 0))
-        activity = ttk.LabelFrame(frame, text="Attività", padding=10)
+        activity = ttk.LabelFrame(frame, text=tr("main.activity"), padding=10)
         activity.grid(row=6, column=0, sticky="ew", pady=(10, 0))
         activity.columnconfigure(0, weight=1)
         ttk.Label(activity, textvariable=self.progress_var, font=("TkDefaultFont", 12, "bold")).grid(
@@ -399,19 +428,19 @@ class DownloadDialog(tk.Toplevel):
         utilities.pack(fill="x")
         actions = ttk.Frame(buttons)
         actions.pack(fill="x", pady=(8, 0))
-        ttk.Button(utilities, text="Lavori recenti…", command=self.app.open_recent_jobs).pack(side="left")
+        ttk.Button(utilities, text=tr("menu.recent_jobs"), command=self.app.open_recent_jobs).pack(side="left")
         self.cleanup_all_button = ttk.Button(
-            utilities, text="Spazio e file temporanei…",
+            utilities, text=tr("menu.storage"),
             command=self.app.open_storage_dialog,
         )
         self.cleanup_all_button.pack(side="left", padx=(6, 0))
         self.new_download_button = ttk.Button(
-            utilities, text="Scarica un altro video", command=self.start_new_download
+            utilities, text=tr("dialog.download.another"), command=self.start_new_download
         )
         self.new_download_button.pack(side="left", padx=(6, 0))
-        self.cancel_button = ttk.Button(actions, text="Interrompi", command=self.cancel, state="disabled")
+        self.cancel_button = ttk.Button(actions, text=tr("main.cancel"), command=self.cancel, state="disabled")
         self.cancel_button.pack(side="right", padx=(6, 0))
-        self.download_button = ttk.Button(actions, text="Scarica video", command=self.download, state="disabled")
+        self.download_button = ttk.Button(actions, text=tr("dialog.download.download"), command=self.download, state="disabled")
         self.download_button.pack(side="right")
 
     def cleanup_all_temporary(self) -> None:
@@ -466,10 +495,11 @@ class DownloadDialog(tk.Toplevel):
         self.cleanup_all_button.configure(state="normal")
 
     def _quality_changed(self, _event: object | None = None) -> None:
-        is_audio = self.QUALITY[self.quality_var.get()] == "audio"
+        quality_labels = self.quality_labels()
+        is_audio = quality_labels[self.quality_var.get()] == "audio"
         self.audio_combo.configure(state="readonly" if is_audio and self.metadata and self.metadata["audio_languages"] else "disabled")
         if self.metadata:
-            selected = self.QUALITY[self.quality_var.get()]
+            selected = quality_labels[self.quality_var.get()]
             actual = effective_quality(self.metadata, selected)
             self.info_var.set(f"{self.metadata['summary']} · Qualità effettiva prevista: {actual}.")
 
@@ -491,7 +521,9 @@ class DownloadDialog(tk.Toplevel):
         self.resume_job = None
         self.metadata = None
         self._allow_resume_url_edit = False
-        self.download_button.configure(text="Scarica video", command=self.download, state="disabled")
+        self.download_button.configure(
+            text=tr("dialog.download.download"), command=self.download, state="disabled"
+        )
         self.quality_var.set("Video e audio · max 1080p")
         self.audio_language_var.set("Traccia predefinita del sito")
         self.audio_combo.configure(values=["Traccia predefinita del sito"], state="disabled")
@@ -543,7 +575,7 @@ class DownloadDialog(tk.Toplevel):
     def download(self) -> None:
         if self.worker or (not self.metadata and not self.resume_job):
             return
-        quality = self.QUALITY[self.quality_var.get()]
+        quality = self.quality_labels()[self.quality_var.get()]
         audio_language = None
         if quality == "audio" and self.audio_language_var.get() != "Traccia predefinita del sito":
             audio_language = self.audio_language_var.get()
@@ -642,7 +674,7 @@ class DownloadDialog(tk.Toplevel):
             return
         self.metadata = None
         self._allow_resume_url_edit = False
-        self.download_button.configure(text="Riprendi", command=self.resume_current)
+        self.download_button.configure(text=tr("main.resume"), command=self.resume_current)
         self.progress.stop()
         self.progress.configure(mode="determinate", maximum=100, value=0)
         self.progress_var.set("")
@@ -653,14 +685,15 @@ class DownloadDialog(tk.Toplevel):
         finally:
             self._setting_saved_url = False
         self._allow_resume_url_edit = not bool(saved_url)
+        quality_labels = DownloadDialog.quality_labels()
         self.quality_var.set(next(
-            (label for label, quality in self.QUALITY.items() if quality == manifest.get("quality")),
-            "Video e audio · max 1080p",
+            (label for label, quality in quality_labels.items() if quality == manifest.get("quality")),
+            next(iter(quality_labels)),
         ))
         saved_audio_language = manifest.get("audio_language")
         self.audio_language_var.set(
             str(saved_audio_language) if saved_audio_language
-            else "Traccia predefinita del sito"
+            else tr("dialog.download.default_track")
         )
         self.destination_var.set(str(manifest.get("destination_dir", self.destination_var.get())))
         self.filename_var.set(str(manifest.get("output_name") or manifest.get("title") or ""))
@@ -695,7 +728,9 @@ class DownloadDialog(tk.Toplevel):
         if self.worker:
             self.status_var.set("Interruzione richiesta. Salvo lo stato del download…")
             self.worker.cancel()
-            self.cancel_button.configure(text="Interruzione richiesta…")
+            self.cancel_button.configure(
+                text="Stop requested…" if get_locale() == "en" else "Interruzione richiesta…"
+            )
             self.cancel_button.configure(state="disabled")
 
     def _request_close(self) -> None:
@@ -726,7 +761,7 @@ class DownloadDialog(tk.Toplevel):
         )
         self.new_download_button.configure(state="disabled" if running else "normal")
         self.cancel_button.configure(
-            text="Interrompi",
+            text=tr("main.cancel"),
             state="normal" if running else "disabled",
         )
         self.app._set_workflow_controls(not running)
@@ -779,7 +814,9 @@ class DownloadDialog(tk.Toplevel):
                             saved_language if saved_language in languages else languages[0]
                         )
                         self._quality_changed()
-                        self.download_button.configure(text="Scarica video", command=self.download)
+                        self.download_button.configure(
+                            text=tr("dialog.download.download"), command=self.download
+                        )
                         self.status_var.set(
                             "Analisi completata. Controlla la qualità prevista e premi Scarica."
                         )
@@ -827,7 +864,9 @@ class DownloadDialog(tk.Toplevel):
                             "Puoi riprendere il trasferimento."
                         )
                         self.app._download_stopped("interrotto", self.status_var.get())
-                        self.download_button.configure(text="Riprendi", command=self.resume_current)
+                        self.download_button.configure(
+                            text=tr("main.resume"), command=self.resume_current
+                        )
                         self._set_running(False)
                         self.worker = None
                         if getattr(self, "close_after_cancel", False):
@@ -842,7 +881,9 @@ class DownloadDialog(tk.Toplevel):
                             "Puoi riprendere il trasferimento; apri i dettagli per la causa."
                         )
                         self.app._download_stopped("errore", self.status_var.get())
-                        self.download_button.configure(text="Riprendi", command=self.resume_current)
+                        self.download_button.configure(
+                            text=tr("main.resume"), command=self.resume_current
+                        )
                         self._set_running(False)
                         self.worker = None
                         if getattr(self, "close_after_cancel", False):
@@ -914,7 +955,7 @@ class RecentJobsDialog(tk.Toplevel):
         super().__init__(master)
         self.app = app
         self.storage_only = storage_only
-        self.title("Spazio e file temporanei" if storage_only else "Lavori recenti")
+        self.title(tr("dialog.storage") if storage_only else tr("dialog.recent"))
         self.minsize(700, 430)
         self.events: queue.Queue[Any] = queue.Queue()
         self.cleanup_in_progress = False
@@ -925,7 +966,7 @@ class RecentJobsDialog(tk.Toplevel):
         frame.rowconfigure(1, weight=1)
         ttk.Label(
             frame,
-            text="Spazio e file temporanei" if storage_only else "Lavori recenti",
+            text=tr("dialog.storage") if storage_only else tr("dialog.recent"),
             font=("TkDefaultFont", 16, "bold"),
         ).grid(
             row=0, column=0, sticky="w", pady=(0, 10)
@@ -933,9 +974,12 @@ class RecentJobsDialog(tk.Toplevel):
         columns = ("kind", "name", "status", "progress", "cost", "modified")
         self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=12)
         for column, title, width in (
-            ("kind", "Operazione", 115), ("name", "Sorgente", 230),
-            ("status", "Stato", 90), ("progress", "Avanzamento", 100),
-            ("cost", "Costo", 80), ("modified", "Modificato", 100),
+            ("kind", tr("dialog.operation"), 115),
+            ("name", tr("dialog.source"), 230),
+            ("status", tr("dialog.status"), 90),
+            ("progress", tr("dialog.progress"), 100),
+            ("cost", tr("dialog.cost"), 80),
+            ("modified", tr("dialog.modified"), 100),
         ):
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, stretch=column == "name")
@@ -943,34 +987,34 @@ class RecentJobsDialog(tk.Toplevel):
         scroll = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scroll.set)
         scroll.grid(row=1, column=1, sticky="ns")
-        self.summary = tk.StringVar(value="Carico i registri salvati…")
+        self.summary = tk.StringVar(value=tr("dialog.loading_jobs"))
         ttk.Label(frame, textvariable=self.summary, wraplength=650).grid(
             row=2, column=0, sticky="w", pady=(8, 12)
         )
         actions = ttk.Frame(frame)
         actions.grid(row=3, column=0, sticky="e")
-        ttk.Button(actions, text="Aggiorna", command=self.refresh).pack(side="left", padx=6)
+        ttk.Button(actions, text=tr("dialog.refresh"), command=self.refresh).pack(side="left", padx=6)
         self.cleanup_button = ttk.Button(
-            actions, text="Elimina temporanei…", command=self.cleanup_temporary,
+            actions, text=tr("dialog.cleanup_selected"), command=self.cleanup_temporary,
             state="disabled",
         )
         self.cleanup_button.pack(side="left", padx=6)
         self.cleanup_all_button = ttk.Button(
-            actions, text="Elimina tutti i temporanei…", command=self.cleanup_all_temporary
+            actions, text=tr("dialog.cleanup_all"), command=self.cleanup_all_temporary
         )
         self.cleanup_all_button.pack(side="left", padx=6)
         self.open_record_button = ttk.Button(
-            actions, text="Apri registro…", command=self.open_record,
+            actions, text=tr("dialog.open_record"), command=self.open_record,
             state="disabled",
         )
         if not storage_only:
             self.open_record_button.pack(side="left", padx=6)
         self.resume_button = ttk.Button(
-            actions, text="Riprendi", command=self.resume, state="disabled"
+            actions, text=tr("main.resume"), command=self.resume, state="disabled"
         )
         if not storage_only:
             self.resume_button.pack(side="left", padx=6)
-        ttk.Button(actions, text="Chiudi", command=self.destroy).pack(side="left", padx=6)
+        ttk.Button(actions, text=tr("dialog.close"), command=self.destroy).pack(side="left", padx=6)
         self.tree.bind("<<TreeviewSelect>>", self._selection_changed)
         self.tree.bind("<Double-1>", lambda _event: self.resume())
         self.after(100, self._poll)
@@ -1296,7 +1340,7 @@ class RevisionDialog(tk.Toplevel):
                  source_language: str | None = "en", target_language: str = "en"):
         super().__init__(master)
         self.operation = operation
-        self.title("Traduci sottotitoli" if operation == OPERATION_TRANSLATION else "Migliora sottotitoli")
+        self.title(tr("dialog.translation") if operation == OPERATION_TRANSLATION else tr("dialog.revision"))
         self.minsize(700, 570)
         self.source = source
         self.worker: RevisionWorker | None = None
@@ -1314,7 +1358,7 @@ class RevisionDialog(tk.Toplevel):
         self.context_var = tk.StringVar()
         self.mode_help_var = tk.StringVar()
         self.estimate_var = tk.StringVar()
-        self.cost_var = tk.StringVar(value="Costo effettivo: $0,0000 USD")
+        self.cost_var = tk.StringVar(value=tr("dialog.actual_cost"))
         self.results_var = tk.StringVar(
             value="Esiti: nessun sottotitolo ancora elaborato."
         )
@@ -1336,8 +1380,8 @@ class RevisionDialog(tk.Toplevel):
         container.columnconfigure(0, weight=1)
         ttk.Label(
             container,
-            text=("Traduci i sottotitoli" if self.operation == OPERATION_TRANSLATION
-                  else "Migliora i sottotitoli"),
+            text=(tr("dialog.translation") if self.operation == OPERATION_TRANSLATION
+                  else tr("dialog.revision")),
             font=("Helvetica", 16, "bold"),
         ).grid(row=0, column=0, sticky="w", pady=(0, 12))
         ttk.Label(
@@ -1352,32 +1396,37 @@ class RevisionDialog(tk.Toplevel):
         settings = ttk.Frame(container)
         settings.grid(row=3, column=0, sticky="ew", pady=(4, 0))
         if self.operation == OPERATION_TRANSLATION:
-            ttk.Label(settings, text="Da").pack(side="left")
+            ttk.Label(settings, text=tr("dialog.from")).pack(side="left")
             self.source_language = ttk.Combobox(
-                settings, width=12, state="readonly", values=list(LANGUAGES.values())
+                settings, width=12, state="readonly",
+                values=[language_label(code) for code in LANGUAGES],
             )
-            self.source_language.set(LANGUAGES.get(self.source_language_var.get(), ""))
+            self.source_language.set(
+                language_label(self.source_language_var.get())
+                if self.source_language_var.get() in LANGUAGES else ""
+            )
             self.source_language.pack(side="left", padx=(5, 12))
-            ttk.Label(settings, text="A").pack(side="left")
+            ttk.Label(settings, text=tr("dialog.to")).pack(side="left")
             self.target_language = ttk.Combobox(
-                settings, width=12, state="readonly", values=list(LANGUAGES.values())
+                settings, width=12, state="readonly",
+                values=[language_label(code) for code in LANGUAGES],
             )
-            self.target_language.set(LANGUAGES[self.target_language_var.get()])
+            self.target_language.set(language_label(self.target_language_var.get()))
             self.target_language.pack(side="left", padx=(5, 12))
             self.source_language.bind("<<ComboboxSelected>>", self._settings_changed)
             self.target_language.bind("<<ComboboxSelected>>", self._settings_changed)
-        ttk.Label(settings, text="Modello").pack(side="left")
+        ttk.Label(settings, text=tr("dialog.model")).pack(side="left")
         self.model_combo = ttk.Combobox(
             settings, width=25, state="readonly", textvariable=self.model_var,
             values=[MODEL_SOL, MODEL_SOL_LEGACY, MODEL_MINI],
         )
         self.model_combo.pack(side="left", padx=5)
         self.model_combo.bind("<<ComboboxSelected>>", self._settings_changed)
-        mode_frame = ttk.LabelFrame(container, text="Tipo di revisione", padding=8)
+        mode_frame = ttk.LabelFrame(container, text=tr("dialog.revision_type"), padding=8)
         mode_frame.grid(row=4, column=0, sticky="ew", pady=(10, 4))
         self.conservative_button = ttk.Radiobutton(
             mode_frame,
-            text="Conservativa — mantiene tutte le parole",
+            text=tr("dialog.conservative"),
             variable=self.mode_var,
             value=REVISION_MODE_CONSERVATIVE,
             command=self._mode_changed,
@@ -1385,7 +1434,7 @@ class RevisionDialog(tk.Toplevel):
         self.conservative_button.pack(anchor="w")
         self.linguistic_button = ttk.Radiobutton(
             mode_frame,
-            text="Linguistica — può correggere piccole parti della frase",
+            text=tr("dialog.linguistic"),
             variable=self.mode_var,
             value=REVISION_MODE_LINGUISTIC,
             command=self._mode_changed,
@@ -1396,7 +1445,7 @@ class RevisionDialog(tk.Toplevel):
         context_frame = ttk.Frame(container) if self.operation == OPERATION_TRANSLATION else mode_frame
         if self.operation == OPERATION_TRANSLATION:
             context_frame.grid(row=4, column=0, sticky="ew", pady=(10, 4))
-        ttk.Label(context_frame, text="Contesto e terminologia (facoltativo)").pack(
+        ttk.Label(context_frame, text=tr("main.context")).pack(
             anchor="w", pady=(8, 2)
         )
         self.context_entry = ttk.Entry(context_frame, textvariable=self.context_var)
@@ -1447,28 +1496,28 @@ class RevisionDialog(tk.Toplevel):
         buttons = ttk.Frame(container)
         buttons.grid(row=14, column=0, sticky="e")
         self.cancel_button = ttk.Button(
-            buttons, text="Interrompi", command=self.cancel, state="disabled"
+            buttons, text=tr("main.cancel"), command=self.cancel, state="disabled"
         )
         self.cancel_button.pack(side="right")
         self.start_button = ttk.Button(
             buttons,
-            text=("Avvia traduzione" if self.operation == OPERATION_TRANSLATION
-                  else "Avvia revisione"),
+            text=(tr("dialog.start_translation") if self.operation == OPERATION_TRANSLATION
+                  else tr("dialog.start_revision")),
             command=self.start_revision,
         )
         self.start_button.pack(side="right", padx=(0, 8))
         self.resume_button = ttk.Button(
-            buttons, text="Riprendi", command=self.resume_revision
+            buttons, text=tr("main.resume"), command=self.resume_revision
         )
         self.resume_button.pack(side="right", padx=(0, 8))
         self.details_button = ttk.Button(
             buttons,
-            text="Dettagli…",
+            text=tr("dialog.details"),
             command=self.show_details,
             state="disabled",
         )
         self.details_button.pack(side="right", padx=(0, 8))
-        ttk.Button(buttons, text="Chiudi", command=self.destroy).pack(
+        ttk.Button(buttons, text=tr("dialog.close"), command=self.destroy).pack(
             side="right", padx=(0, 8)
         )
 
@@ -1534,7 +1583,7 @@ class RevisionDialog(tk.Toplevel):
             self.status_var.set(f"SRT non utilizzabile: {error}")
             self.start_button.configure(state="disabled")
             return
-        self.caption_var.set(f"Sottotitoli: {len(captions)}")
+        self.caption_var.set(tr("dialog.captions", count=len(captions)))
         self._update_mode_help()
         if estimate is None:
             self.estimate_var.set("Scegli la lingua originale per vedere la stima.")
@@ -1560,14 +1609,14 @@ class RevisionDialog(tk.Toplevel):
     def _settings_changed(self, _event: object | None = None) -> None:
         if self.operation == OPERATION_TRANSLATION:
             source_label = self.source_language.get()
-            if source_label not in LANGUAGE_CODES_BY_LABEL:
+            source_code = language_code(source_label, include_source=False)
+            target_code = language_code(self.target_language.get(), include_source=False)
+            if source_code not in LANGUAGES or target_code not in LANGUAGES:
                 self.estimate_var.set("Scegli la lingua originale per vedere la stima.")
                 self.start_button.configure(state="disabled")
                 return
-            self.source_language_var.set(LANGUAGE_CODES_BY_LABEL[source_label])
-            self.target_language_var.set(
-                LANGUAGE_CODES_BY_LABEL[self.target_language.get()]
-            )
+            self.source_language_var.set(source_code)
+            self.target_language_var.set(target_code)
         self._schedule_preview()
 
     def _estimate(self) -> Any:
@@ -1688,12 +1737,12 @@ class RevisionDialog(tk.Toplevel):
                 str(manifest.get("target_language", self.source_language_var.get()))
             )
             if self.operation == OPERATION_TRANSLATION:
-                self.source_language.set(LANGUAGES[self.source_language_var.get()])
-                self.target_language.set(LANGUAGES[self.target_language_var.get()])
+                self.source_language.set(language_label(self.source_language_var.get()))
+                self.target_language.set(language_label(self.target_language_var.get()))
             self.model_var.set(str(manifest["model"]))
             self.context_var.set(str(manifest.get("user_context", "")))
             self._update_mode_help()
-            self.caption_var.set(f"Sottotitoli: {manifest['caption_count']}")
+            self.caption_var.set(tr("dialog.captions", count=manifest["caption_count"]))
             self._show_estimate(estimate)
             self.progress.configure(
                 maximum=len(manifest["groups"]),
@@ -1982,25 +2031,27 @@ class App(ttk.Frame):
         self.workflow_active = False
         self.probe_events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.video_var = tk.StringVar()
-        self.video_display_var = tk.StringVar(value="Nessun video selezionato")
-        self.video_folder_var = tk.StringVar(value="Scegli un video o importa un link per iniziare.")
+        self.video_display_var = tk.StringVar(value=tr("main.no_video"))
+        self.video_folder_var = tk.StringVar(value=tr("main.choose_source"))
         self.output_var = tk.StringVar()
-        self.output_display_var = tk.StringVar(value="Scegli una destinazione")
+        self.output_display_var = tk.StringVar(value=tr("main.choose_destination"))
         self.output_folder_var = tk.StringVar(value="")
-        self.model_summary_var = tk.StringVar(value=f"Modello selezionato: {MODEL_SOL}")
+        self.model_summary_var = tk.StringVar(
+            value=tr("main.model_selected", model=MODEL_SOL)
+        )
         self.track_var = tk.StringVar()
         self.source_language_var = tk.StringVar(value="auto")
         self.target_language_var = tk.StringVar(value="original")
         self.start_time_var = tk.StringVar(value="00:00:00")
         self.end_time_var = tk.StringVar(value="00:00:00")
         self._syncing_range = False
-        self.cost_var = tk.StringVar(value="Seleziona un video per vedere la stima.")
-        self.status_var = tk.StringVar(value="Pronto.")
+        self.cost_var = tk.StringVar(value=tr("main.estimate_video"))
+        self.status_var = tk.StringVar(value=tr("main.ready"))
         self.activity_var = tk.StringVar(value="")
         self.result_count_events: queue.Queue[tuple[Path, int | None]] = queue.Queue()
-        self.work_summary_var = tk.StringVar(value="Scegli un video o scaricalo da un link.")
-        self.source_hint_var = tk.StringVar(value="Disponibile dopo il caricamento del video.")
-        self.final_hint_var = tk.StringVar(value="Disponibile dopo il caricamento del video.")
+        self.work_summary_var = tk.StringVar(value=tr("main.choose_source"))
+        self.source_hint_var = tk.StringVar(value=tr("main.video_required"))
+        self.final_hint_var = tk.StringVar(value=tr("main.video_required"))
         self.activity_started_at: float | None = None
         self.last_activity_event_at: float | None = None
         self.phase_started_at: float | None = None
@@ -2021,7 +2072,7 @@ class App(ttk.Frame):
         self.master.after(100, self._poll)
 
     def _build_v08(self) -> None:
-        self.master.title("Video Sottotitoli")
+        self.master.title(tr("app.name"))
         self.master.geometry("960x740")
         self.master.minsize(760, 630)
         self._build_menu()
@@ -2057,16 +2108,16 @@ class App(ttk.Frame):
         header.grid(row=0, column=0, sticky="ew", pady=(0, 16))
         header.columnconfigure(0, weight=1)
         ttk.Label(
-            header, text="Video Sottotitoli", font=("TkDefaultFont", 20, "bold")
+            header, text=tr("app.name"), font=("TkDefaultFont", 20, "bold")
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(header, textvariable=self.work_summary_var, wraplength=680).grid(
             row=1, column=0, sticky="w", pady=(2, 0)
         )
         ttk.Button(
-            header, text="Lavori recenti…", command=self.open_recent_jobs
+            header, text=tr("menu.recent_jobs"), command=self.open_recent_jobs
         ).grid(row=0, column=1, rowspan=2, sticky="e")
 
-        source = ttk.LabelFrame(layout, text="Sorgente", padding=12)
+        source = ttk.LabelFrame(layout, text=tr("main.source"), padding=12)
         source.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         source.columnconfigure(1, weight=1)
         ttk.Label(source, textvariable=self.source_hint_var, wraplength=760).grid(
@@ -2074,40 +2125,40 @@ class App(ttk.Frame):
         )
         self.video_entry = ttk.Entry(source, textvariable=self.video_display_var, state="readonly")
         self.video_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
-        ttk.Label(source, text="Video").grid(row=0, column=0, sticky="w")
+        ttk.Label(source, text=tr("main.video")).grid(row=0, column=0, sticky="w")
         self.choose_video_button = ttk.Button(
-            source, text="Scegli video…", command=self.choose_video
+            source, text=tr("main.choose_video"), command=self.choose_video
         )
         self.choose_video_button.grid(row=0, column=2, padx=(0, 6))
         self.link_button = ttk.Button(
-            source, text="Da link…", command=self.open_download_dialog
+            source, text=tr("main.from_link"), command=self.open_download_dialog
         )
         self.link_button.grid(row=0, column=3)
         ttk.Label(source, textvariable=self.video_folder_var).grid(
             row=1, column=1, sticky="w", padx=(8, 0), pady=(5, 0)
         )
         self.copy_source_path_button = ttk.Button(
-            source, text="Copia percorso", command=self._copy_source_path, state="disabled"
+            source, text=tr("main.copy_path"), command=self._copy_source_path, state="disabled"
         )
         self.copy_source_path_button.grid(row=1, column=3, sticky="e", pady=(4, 0))
-        ttk.Label(source, text="Traccia audio").grid(row=2, column=0, sticky="w", pady=(9, 0))
+        ttk.Label(source, text=tr("main.audio_track")).grid(row=2, column=0, sticky="w", pady=(9, 0))
         self.track = ttk.Combobox(source, textvariable=self.track_var, state="disabled")
         self.track.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(9, 0))
         speech_row = ttk.Frame(source)
         speech_row.grid(row=3, column=0, columnspan=4, sticky="w", pady=(9, 0))
-        ttk.Label(speech_row, text="Lingua parlata").pack(side="left")
+        ttk.Label(speech_row, text=tr("main.spoken_language")).pack(side="left")
         self.source_language = ttk.Combobox(
-            speech_row, width=14, state="readonly", values=list(SOURCE_LANGUAGES.values())
+            speech_row, width=14, state="readonly",
+            values=[language_label(code) for code in ("auto", "en", "it", "ja", "fr")],
         )
-        self.source_language.set(SOURCE_LANGUAGES["auto"])
+        self.source_language.set(language_label("auto"))
         self.source_language.bind("<<ComboboxSelected>>", self._source_language_changed)
         self.source_language.pack(side="left", padx=(8, 6))
         HelpButton(
-            speech_row, "Lingua parlata",
-            "È la lingua che viene pronunciata nel video. Automatico lascia che il servizio la rilevi; se il risultato è ambiguo potrai indicarla dopo la trascrizione.",
+            speech_row, tr("help.spoken.title"), tr("help.spoken.body"),
         ).pack(side="left")
 
-        final = ttk.LabelFrame(layout, text="Sottotitoli finali", padding=12)
+        final = ttk.LabelFrame(layout, text=tr("main.final_subtitles"), padding=12)
         final.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         final.columnconfigure(1, weight=1)
         ttk.Label(final, textvariable=self.final_hint_var, wraplength=760).grid(
@@ -2115,50 +2166,49 @@ class App(ttk.Frame):
         )
         target_row = ttk.Frame(final)
         target_row.grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(target_row, text="Lingua finale").pack(side="left")
+        ttk.Label(target_row, text=tr("main.final_language")).pack(side="left")
         self.target_language = ttk.Combobox(
-            target_row, width=14, state="readonly", values=["Originale", *LANGUAGES.values()]
+            target_row, width=14, state="readonly",
+            values=[language_label(code) for code in ("original", "en", "it", "ja")],
         )
-        self.target_language.set("Originale")
+        self.target_language.set(language_label("original"))
         self.target_language.bind("<<ComboboxSelected>>", self._final_language_changed)
         self.target_language.pack(side="left", padx=(8, 6))
         HelpButton(
-            target_row, "Lingua finale",
-            "È la lingua del file SRT che riceverai. Se coincide con la lingua parlata, l'app usa direttamente la trascrizione.",
+            target_row, tr("help.final.title"), tr("help.final.body"),
         ).pack(side="left")
-        ttk.Label(final, text="Intervallo").grid(row=1, column=0, sticky="nw", pady=(12, 0))
+        ttk.Label(final, text=tr("main.range")).grid(row=1, column=0, sticky="nw", pady=(12, 0))
         range_frame = ttk.Frame(final)
         range_frame.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=(12, 0))
         range_frame.columnconfigure(1, weight=1)
         range_frame.columnconfigure(3, weight=1)
-        ttk.Label(range_frame, text="Inizio").grid(row=0, column=0, sticky="w")
+        ttk.Label(range_frame, text=tr("main.start")).grid(row=0, column=0, sticky="w")
         self.start_entry = ttk.Entry(range_frame, textvariable=self.start_time_var, width=12)
         self.start_entry.grid(row=0, column=1, sticky="w", padx=(6, 14))
-        ttk.Label(range_frame, text="Fine").grid(row=0, column=2, sticky="w")
+        ttk.Label(range_frame, text=tr("main.end")).grid(row=0, column=2, sticky="w")
         self.end_entry = ttk.Entry(range_frame, textvariable=self.end_time_var, width=12)
         self.end_entry.grid(row=0, column=3, sticky="w", padx=6)
         self.reset_range_button = ttk.Button(
-            range_frame, text="Tutto il video", command=self._reset_range
+            range_frame, text=tr("main.whole_video"), command=self._reset_range
         )
         self.reset_range_button.grid(row=0, column=4, sticky="e")
         self.range_scale = TimeRangeScale(range_frame, self._range_changed)
         self.range_scale.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(8, 3))
         HelpButton(
-            range_frame, "Intervallo",
-            "Inserisci HH:MM:SS oppure minuti decimali, con virgola o punto. I timestamp finali restano riferiti al video originale.",
+            range_frame, tr("help.range.title"), tr("help.range.body"),
         ).grid(row=2, column=0, sticky="w", pady=(3, 0))
         ttk.Label(
-            range_frame, text="Anche minuti decimali; usa ←/→ per regolare di un secondo.",
+            range_frame, text=tr("main.range_hint"),
         ).grid(row=2, column=1, columnspan=4, sticky="w", pady=(3, 0))
-        ttk.Label(final, text="Salva SRT in").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(final, text=tr("main.save_srt")).grid(row=2, column=0, sticky="w", pady=(12, 0))
         self.output_entry = ttk.Entry(
             final, textvariable=self.output_display_var, state="readonly"
         )
         self.output_entry.grid(row=2, column=1, sticky="ew", padx=(8, 8), pady=(12, 0))
-        self.choose_output_button = ttk.Button(final, text="Scegli…", command=self.choose_output)
+        self.choose_output_button = ttk.Button(final, text=tr("main.choose"), command=self.choose_output)
         self.choose_output_button.grid(row=2, column=2, pady=(12, 0))
         self.output_path_button = ttk.Button(
-            final, text="Copia percorso", command=self._copy_output_path, state="disabled"
+            final, text=tr("main.copy_path"), command=self._copy_output_path, state="disabled"
         )
         ttk.Label(final, textvariable=self.output_folder_var).grid(
             row=3, column=1, sticky="w", padx=(8, 8), pady=(5, 0)
@@ -2166,11 +2216,11 @@ class App(ttk.Frame):
         self.output_path_button.grid(row=3, column=2, sticky="e", pady=(4, 0))
 
         self.advanced_toggle = ttk.Button(
-            final, text="Mostra opzioni avanzate", command=self._toggle_advanced
+            final, text=tr("main.advanced_show"), command=self._toggle_advanced
         )
         self.summary_check_button = ttk.Checkbutton(
             final,
-            text="Crea anche un riassunto con temi e link (.txt)",
+            text=tr("main.summary_option"),
             variable=self.summary_checkbox_var,
             command=self._summary_option_changed,
         )
@@ -2179,7 +2229,7 @@ class App(ttk.Frame):
         )
         ttk.Label(
             final,
-            text="Tematiche, riassunto e link web · costo e avvio separati dopo l’SRT.",
+            text=tr("main.summary_help"),
             wraplength=760,
         ).grid(row=5, column=0, columnspan=3, sticky="w", padx=(20, 0), pady=(2, 0))
         self.advanced_toggle.grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 0))
@@ -2188,7 +2238,7 @@ class App(ttk.Frame):
         self.advanced_frame.columnconfigure(1, weight=1)
         model_row = ttk.Frame(self.advanced_frame)
         model_row.grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(model_row, text="Modello traduzione").pack(side="left")
+        ttk.Label(model_row, text=tr("main.translation_model")).pack(side="left")
         self.translation_model_combo = ttk.Combobox(
             model_row, width=23, state="readonly", textvariable=self.translation_model_var,
             values=[MODEL_SOL, MODEL_SOL_LEGACY, MODEL_MINI],
@@ -2196,10 +2246,9 @@ class App(ttk.Frame):
         self.translation_model_combo.pack(side="left", padx=(8, 6))
         self.translation_model_combo.bind("<<ComboboxSelected>>", self._update_translation_estimate)
         HelpButton(
-            model_row, "Modello",
-            "Il modello si usa per traduzione e revisione contestuale. Modelli diversi hanno tariffe diverse; il prezzo non garantisce un risultato linguistico specifico.",
+            model_row, tr("help.model.title"), tr("help.model.body"),
         ).pack(side="left")
-        ttk.Label(self.advanced_frame, text="Contesto e terminologia (facoltativo)").grid(
+        ttk.Label(self.advanced_frame, text=tr("main.context")).grid(
             row=1, column=0, sticky="w", pady=(8, 0)
         )
         self.translation_context_entry = ttk.Entry(
@@ -2209,8 +2258,7 @@ class App(ttk.Frame):
             row=1, column=1, sticky="ew", padx=(8, 6), pady=(8, 0)
         )
         HelpButton(
-            self.advanced_frame, "Contesto",
-            "Aggiungi informazioni utili per tradurre, per esempio: “lezione di botanica; il termine X è il nome di una persona”. Non serve per forza un contesto.",
+            self.advanced_frame, tr("help.context.title"), tr("help.context.body"),
         ).grid(row=1, column=2, pady=(8, 0))
         self.translation_estimate_label = ttk.Label(
             self.advanced_frame, textvariable=self.translation_estimate_var,
@@ -2224,7 +2272,7 @@ class App(ttk.Frame):
             row=8, column=0, columnspan=3, sticky="w", pady=(6, 0)
         )
 
-        activity = ttk.LabelFrame(layout, text="Attività", padding=12)
+        activity = ttk.LabelFrame(layout, text=tr("main.activity"), padding=12)
         self.activity_frame = activity
         activity.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         activity.columnconfigure(0, weight=1)
@@ -2238,8 +2286,7 @@ class App(ttk.Frame):
         self.cost_label = ttk.Label(activity_header, textvariable=self.cost_var, wraplength=760)
         self.cost_label.grid(row=1, column=0, sticky="w", pady=(5, 0))
         HelpButton(
-            activity_header, "Stima e costo",
-            "La stima audio viene mostrata prima dell'avvio. Se traduci, il costo viene stimato dopo aver ottenuto il testo. È un'indicazione, non un limite massimo di spesa.",
+            activity_header, tr("help.cost.title"), tr("help.cost.body"),
         ).grid(row=1, column=1, padx=(8, 0))
         progress_row = ttk.Frame(activity)
         progress_row.grid(row=2, column=0, sticky="ew", pady=(10, 0))
@@ -2256,10 +2303,10 @@ class App(ttk.Frame):
         self.log_panel = EventLogPanel(activity)
         self.log_panel.grid(row=4, column=0, sticky="ew", pady=(8, 0))
 
-        result = ttk.LabelFrame(layout, text="Risultato", padding=12)
+        result = ttk.LabelFrame(layout, text=tr("main.result"), padding=12)
         result.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         result.columnconfigure(0, weight=1)
-        self.result_summary_var = tk.StringVar(value="Il file comparirà qui al termine del lavoro.")
+        self.result_summary_var = tk.StringVar(value=tr("main.result_pending"))
         ttk.Label(result, textvariable=self.result_summary_var, wraplength=780).grid(
             row=0, column=0, sticky="w"
         )
@@ -2272,23 +2319,23 @@ class App(ttk.Frame):
         result_buttons = ttk.Frame(result)
         result_buttons.grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.open_result_button = ttk.Button(
-            result_buttons, text="Apri SRT", command=self._open_result, state="disabled"
+            result_buttons, text=tr("main.open_srt"), command=self._open_result, state="disabled"
         )
         # The fixed footer owns the primary action; result actions remain secondary.
         self.show_finder_button = ttk.Button(
-            result_buttons, text="Mostra nel Finder", command=self._show_result,
+            result_buttons, text=tr("main.show_finder"), command=self._show_result,
             state="disabled",
         )
         self.show_issues_button = ttk.Button(
-            result_buttons, text="Vedi problemi", command=self._open_issues,
+            result_buttons, text=tr("main.view_issues"), command=self._open_issues,
             state="disabled",
         )
         self.open_summary_button = ttk.Button(
-            result_buttons, text="Apri TXT", command=self._open_summary,
+            result_buttons, text=tr("main.open_txt"), command=self._open_summary,
             state="disabled",
         )
         self.new_work_button = ttk.Button(
-            result_buttons, text="Nuovo lavoro", command=self._new_work
+            result_buttons, text=tr("main.new_job"), command=self._new_work
         )
 
         footer = ttk.Frame(shell, padding=(12, 8))
@@ -2297,17 +2344,17 @@ class App(ttk.Frame):
         actions = ttk.Frame(footer)
         actions.pack(fill="x")
         self.cancel_button = ttk.Button(
-            actions, text="Interrompi", command=self.cancel, state="disabled"
+            actions, text=tr("main.cancel"), command=self.cancel, state="disabled"
         )
-        self.resume_button = ttk.Button(actions, text="Riprendi", command=self.resume)
+        self.resume_button = ttk.Button(actions, text=tr("main.resume"), command=self.resume)
         self.start_button = ttk.Button(
-            actions, text="Genera sottotitoli", command=self.start, state="disabled"
+            actions, text=tr("main.generate"), command=self.start, state="disabled"
         )
         self.footer_open_button = ttk.Button(
-            actions, text="Apri SRT", command=self._open_result
+            actions, text=tr("main.open_srt"), command=self._open_result
         )
         self.summary_button = ttk.Button(
-            actions, text="Crea TXT", command=self._start_summary
+            actions, text=tr("main.create_txt"), command=self._start_summary
         )
 
         self.master.protocol("WM_DELETE_WINDOW", self._request_close)
@@ -2316,26 +2363,60 @@ class App(ttk.Frame):
     def _build_menu(self) -> None:
         menu = tk.Menu(self.master)
         tools_menu = tk.Menu(menu, tearoff=False)
-        tools_menu.add_command(label="Traduci SRT…", command=self.translate_existing_srt)
-        tools_menu.add_command(label="Migliora sottotitoli…", command=self.improve_existing_srt)
+        tools_menu.add_command(label=tr("menu.translate_srt"), command=self.translate_existing_srt)
+        tools_menu.add_command(label=tr("menu.improve_srt"), command=self.improve_existing_srt)
         tools_menu.add_command(
-            label="Migliora leggibilità SRT…", command=self.format_existing_srt
+            label=tr("menu.readability"), command=self.format_existing_srt
         )
         self.master.tools_menu = tools_menu
-        menu.add_cascade(label="Strumenti", menu=tools_menu)
+        menu.add_cascade(label=tr("menu.tools"), menu=tools_menu)
         settings_menu = tk.Menu(menu, tearoff=False)
-        settings_menu.add_command(label="Configura chiave API…", command=self.configure_key)
-        menu.add_cascade(label="Impostazioni", menu=settings_menu)
-        jobs_menu = tk.Menu(menu, tearoff=False)
-        jobs_menu.add_command(label="Lavori recenti…", command=self.open_recent_jobs)
-        jobs_menu.add_command(
-            label="Spazio e file temporanei…", command=self.open_storage_dialog
+        settings_menu.add_command(label=tr("menu.api_key"), command=self.configure_key)
+        language_menu = tk.Menu(settings_menu, tearoff=False)
+        self.ui_locale_var = tk.StringVar(value=get_locale())
+        language_menu.add_radiobutton(
+            label=tr("menu.language.english"), variable=self.ui_locale_var,
+            value="en", command=lambda: self._change_ui_locale("en"),
         )
-        menu.add_cascade(label="Lavori", menu=jobs_menu)
+        language_menu.add_radiobutton(
+            label=tr("menu.language.italian"), variable=self.ui_locale_var,
+            value="it", command=lambda: self._change_ui_locale("it"),
+        )
+        self.language_menu = language_menu
+        settings_menu.add_cascade(label=tr("menu.interface_language"), menu=language_menu)
+        menu.add_cascade(label=tr("menu.settings"), menu=settings_menu)
+        jobs_menu = tk.Menu(menu, tearoff=False)
+        jobs_menu.add_command(label=tr("menu.recent_jobs"), command=self.open_recent_jobs)
+        jobs_menu.add_command(
+            label=tr("menu.storage"), command=self.open_storage_dialog
+        )
+        menu.add_cascade(label=tr("menu.jobs"), menu=jobs_menu)
         self.master.configure(menu=menu)
         self.master.bind("<Command-o>", lambda _event: self.choose_video())
         self.master.bind("<Command-r>", self._resume_shortcut)
         self.master.bind("<Escape>", self._escape_help)
+
+    def _change_ui_locale(self, locale_code: str) -> None:
+        if locale_code == get_locale():
+            return
+        if self.worker or self.translation_worker or self.summary_worker or self._active_download() or self._busy:
+            self.ui_locale_var.set(get_locale())
+            return
+        save_locale(PREFERENCES_PATH, locale_code)
+        set_locale(locale_code)
+        try:
+            if getattr(sys, "frozen", False):
+                command = [sys.executable]
+            else:
+                command = [sys.executable, *sys.argv]
+            subprocess.Popen(command, close_fds=True, start_new_session=True)
+        except OSError as exc:
+            messagebox.showwarning(
+                tr("restart.title"), tr("restart.failed", error=str(exc)),
+                parent=self.master,
+            )
+            return
+        self.master.destroy()
 
     def _scroll_main(self, event: tk.Event) -> str | None:
         try:
@@ -2370,10 +2451,10 @@ class App(ttk.Frame):
             return
         if self.advanced_visible:
             self.advanced_frame.grid_forget()
-            self.advanced_toggle.configure(text="Mostra opzioni avanzate")
+            self.advanced_toggle.configure(text=tr("main.advanced_show"))
         else:
             self.advanced_frame.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 0))
-            self.advanced_toggle.configure(text="Nascondi opzioni avanzate")
+            self.advanced_toggle.configure(text=tr("main.advanced_hide"))
         self.advanced_visible = not self.advanced_visible
 
     def _copy_output_path(self) -> None:
@@ -2386,20 +2467,20 @@ class App(ttk.Frame):
     def _update_output_path(self, *_args: object) -> None:
         value = self.output_var.get()
         if not value:
-            self.output_display_var.set("Scegli una destinazione")
+            self.output_display_var.set(tr("main.choose_destination"))
             self.output_folder_var.set("")
             self.output_path_button.configure(state="disabled")
             return
         path = Path(value)
         self.output_display_var.set(path.name)
-        self.output_folder_var.set(f"Cartella: {path.parent.name}")
+        self.output_folder_var.set(tr("main.folder", name=path.parent.name))
         self.output_path_button.configure(
             state="normal" if self._workflow_controls_enabled and self.media else "disabled"
         )
 
     def _refresh_model_summary(self, *_args: object) -> None:
         model = self.translation_model_var.get() or MODEL_SOL
-        text = f"Modello selezionato per la traduzione: {model}."
+        text = tr("main.model_selected", model=model)
         if hasattr(self, "model_summary_var"):
             self.model_summary_var.set(text)
 
@@ -2416,7 +2497,7 @@ class App(ttk.Frame):
             return
         name = Path(self.video_var.get() or self.media.path).name
         language = self.target_language.get()
-        if language == "Originale":
+        if language_code(language) == "original":
             language = "lingua originale"
         interval = ""
         try:
@@ -2436,13 +2517,13 @@ class App(ttk.Frame):
     def _update_source_path(self, *_args: object) -> None:
         value = self.video_var.get()
         if not value:
-            self.video_display_var.set("Nessun video selezionato")
-            self.video_folder_var.set("Scegli un video o importa un link per iniziare.")
+            self.video_display_var.set(tr("main.no_video"))
+            self.video_folder_var.set(tr("main.choose_source"))
             self.copy_source_path_button.configure(state="disabled")
             return
         path = Path(value)
         self.video_display_var.set(path.name)
-        self.video_folder_var.set(f"Cartella: {path.parent.name}")
+        self.video_folder_var.set(tr("main.folder", name=path.parent.name))
         self.copy_source_path_button.configure(
             state="normal" if self._workflow_controls_enabled else "disabled"
         )
@@ -2580,7 +2661,7 @@ class App(ttk.Frame):
         return None
 
     def _build(self) -> None:
-        self.master.title("Video Sottotitoli")
+        self.master.title(tr("app.name"))
         self.master.minsize(760, 630)
         shell = ttk.Frame(self)
         shell.pack(fill="both", expand=True)
@@ -2786,8 +2867,8 @@ class App(ttk.Frame):
             or self.summary_worker or self._active_download() or self._busy
         ):
             return
-        label = self.target_language.get()
-        target = "original" if label == "Originale" else LANGUAGE_CODES_BY_LABEL[label]
+        target = language_code(self.target_language.get()) or "original"
+        self.target_language_var.set(target)
         self.translation_target_var.set(target)
         self.translation_estimate_var.set(
             "Verrà salvata la trascrizione nella lingua parlata."
@@ -2802,11 +2883,11 @@ class App(ttk.Frame):
         self._enable_start()
 
     def _translation_options_needed(self) -> bool:
-        target = self.target_language.get()
-        if target == "Originale":
+        target = language_code(self.target_language.get()) or "original"
+        if target == "original":
             return False
-        source = SOURCE_LANGUAGE_CODES_BY_LABEL.get(self.source_language.get(), "auto")
-        return source == "auto" or source != LANGUAGE_CODES_BY_LABEL.get(target)
+        source = language_code(self.source_language.get()) or "auto"
+        return source == "auto" or source != target
 
     def _set_workflow_controls(self, enabled: bool) -> None:
         self._workflow_controls_enabled = enabled
@@ -2832,7 +2913,7 @@ class App(ttk.Frame):
                 self.advanced_toggle.grid_remove()
                 self.advanced_frame.grid_remove()
                 self.advanced_visible = False
-                self.advanced_toggle.configure(text="Mostra opzioni avanzate")
+                self.advanced_toggle.configure(text=tr("main.advanced_show"))
                 self.model_summary_label.grid_remove()
             self._refresh_work_summary()
         combo_state = "readonly" if video_ready else "disabled"
@@ -2881,6 +2962,15 @@ class App(ttk.Frame):
             self.master.tools_menu.entryconfigure(
                 index, state="normal" if enabled else "disabled"
             )
+        language_state = "normal" if enabled and not (
+            getattr(self, "worker", None) or getattr(self, "translation_worker", None)
+            or getattr(self, "summary_worker", None)
+            or (self._active_download() if hasattr(self, "_active_download") else None)
+            or getattr(self, "_busy", False)
+        ) else "disabled"
+        if hasattr(self, "language_menu"):
+            for index in range(self.language_menu.index("end") + 1):
+                self.language_menu.entryconfigure(index, state=language_state)
         self.master.after_idle(self._update_footer_state)
 
     def _update_footer_state(self) -> None:
@@ -2909,7 +2999,8 @@ class App(ttk.Frame):
             widget.pack_forget()
         if self.worker or self.translation_worker or self.summary_worker or self._active_download():
             self.cancel_button.configure(
-                text="Interruzione richiesta…" if self.cancel_requested else "Interrompi",
+                text=("Stop requested…" if get_locale() == "en" else "Interruzione richiesta…")
+                if self.cancel_requested else tr("main.cancel"),
                 state="disabled" if self.cancel_requested else "normal",
             )
             self.cancel_button.pack(side="right")
@@ -2935,13 +3026,13 @@ class App(ttk.Frame):
         elif self.workflow_active:
             pass
         elif self.media:
-            self.start_button.configure(text="Genera sottotitoli", command=self.start)
+            self.start_button.configure(text=tr("main.generate"), command=self.start)
             self.start_button.configure(
                 state="normal" if self.start_button.instate(["!disabled"]) else "disabled"
             )
             self.start_button.pack(side="right")
         else:
-            self.start_button.configure(text="Scegli video…", command=self.choose_video)
+            self.start_button.configure(text=tr("main.choose_video"), command=self.choose_video)
             self.start_button.configure(state="normal")
             self.start_button.pack(side="right")
 
@@ -2957,8 +3048,9 @@ class App(ttk.Frame):
         )
         if not self.translation_captions:
             return
-        selected = SOURCE_LANGUAGE_CODES_BY_LABEL.get(self.source_language.get(), "auto")
-        self.translation_source_var.set(LANGUAGE_NAMES.get(selected, ""))
+        selected = language_code(self.source_language.get()) or "auto"
+        self.source_language_var.set(selected)
+        self.translation_source_var.set(selected)
         if selected != "auto" and selected == self.translation_target_var.get():
             if self.translation_source and self.final_output_path:
                 self._publish_readable_copy(
@@ -3000,7 +3092,7 @@ class App(ttk.Frame):
             return
         source = result.get("effective_language") or result.get("source_language", "auto")
         if source == "auto":
-            source = SOURCE_LANGUAGE_CODES_BY_LABEL.get(self.source_language.get(), "auto")
+            source = language_code(self.source_language.get()) or "auto"
         if source == target:
             final_output = Path(
                 str(result.get("final_output") or self.final_output_path or self.output_var.get())
@@ -3018,7 +3110,7 @@ class App(ttk.Frame):
         self.translation_source = str(result["output"])
         self.translation_captions = load_captions(self.translation_source)
         self.translation_target_var.set(target)
-        self.translation_source_var.set(LANGUAGE_NAMES.get(str(source), ""))
+        self.translation_source_var.set(str(source))
         self.translation_model_var.set(
             str(result.get("target_model") or self.translation_model_var.get())
         )
@@ -3300,8 +3392,8 @@ class App(ttk.Frame):
             if self.worker is None:
                 self._set_busy(False)
             return
-        source_label = self.translation_source_var.get()
-        if source_label not in SOURCE_LANGUAGE_CODES_BY_LABEL:
+        source = self.translation_source_var.get()
+        if source not in LANGUAGE_NAMES:
             self.translation_estimate_var.set(
                 "Seleziona la lingua parlata in alto per continuare la traduzione."
             )
@@ -3311,7 +3403,6 @@ class App(ttk.Frame):
             if self.worker is None:
                 self._set_busy(False)
             return
-        source = SOURCE_LANGUAGE_CODES_BY_LABEL[source_label]
         target = self.translation_target_var.get()
         if source == target:
             self.translation_estimate_var.set(
@@ -3386,8 +3477,8 @@ class App(ttk.Frame):
     def _start_translation(self) -> None:
         if not self.translation_source or self.translation_worker:
             return
-        source_label = self.translation_source_var.get()
-        if source_label not in SOURCE_LANGUAGE_CODES_BY_LABEL:
+        source_code = self.translation_source_var.get()
+        if source_code not in LANGUAGE_NAMES:
             return
         api_key = load_api_key()
         if not api_key:
@@ -3404,7 +3495,7 @@ class App(ttk.Frame):
         self.translation_worker = RevisionWorker(
             str(source), str(output), api_key, mode=REVISION_MODE_LINGUISTIC,
             operation=OPERATION_TRANSLATION,
-            source_language=SOURCE_LANGUAGE_CODES_BY_LABEL[source_label],
+            source_language=source_code,
             target_language=target, model=self.translation_model_var.get(),
             user_context=self.translation_context_var.get(),
             parent_job=str(self.transcription_job_path) if self.transcription_job_path else None,
@@ -3535,7 +3626,8 @@ class App(ttk.Frame):
         # per decidere la lingua parlata: possono essere errati.
         if media.audio_tracks:
             self.track.current(0)
-        self.source_language.set(SOURCE_LANGUAGES["auto"])
+        self.source_language_var.set("auto")
+        self.source_language.set(language_label("auto"))
 
         default_output = Path(media.path).with_suffix(".srt")
         self.output_var.set(str(default_output))
@@ -3658,12 +3750,10 @@ class App(ttk.Frame):
             messagebox.showerror("Traccia audio", "Scegli una traccia audio.")
             return
         track = self.media.audio_tracks[track_index]
-        source_language = SOURCE_LANGUAGE_CODES_BY_LABEL[self.source_language.get()]
-        target_label = self.target_language.get()
-        target_language = (
-            "original" if target_label == "Originale"
-            else LANGUAGE_CODES_BY_LABEL[target_label]
-        )
+        source_language = language_code(self.source_language.get()) or "auto"
+        target_language = language_code(self.target_language.get()) or "original"
+        self.source_language_var.set(source_language)
+        self.target_language_var.set(target_language)
         self.translation_target_var.set(target_language)
         self.summary_requested = bool(self.summary_checkbox_var.get())
         self.summary_waiting_for_approval = False
@@ -3856,9 +3946,7 @@ class App(ttk.Frame):
             self.video_var.set(str(manifest.get("video", "")))
             target = str(manifest.get("target_language", "original"))
             self.translation_target_var.set(target)
-            self.target_language.set(
-                "Originale" if target == "original" else LANGUAGES[target]
-            )
+            self.target_language.set(language_label(target))
             self.translation_model_var.set(
                 str(manifest.get("target_model", MODEL_SOL))
             )
@@ -3973,9 +4061,7 @@ class App(ttk.Frame):
         self.final_output_path = Path(str(manifest["output"]))
         self.output_var.set(str(self.final_output_path))
         self.translation_target_var.set(str(manifest.get("target_language", "it")))
-        self.translation_source_var.set(
-            LANGUAGE_NAMES.get(str(manifest.get("source_language", "")), "")
-        )
+        self.translation_source_var.set(str(manifest.get("source_language", "")))
         self.translation_model_var.set(str(manifest.get("model", MODEL_SOL)))
         self.translation_model_combo.set(self.translation_model_var.get())
         self.translation_context_var.set(str(manifest.get("user_context", "")))
@@ -4341,6 +4427,7 @@ class App(ttk.Frame):
 
 def main() -> None:
     log_path = Path.home() / "Library" / "Logs" / "VideoSottotitoli" / "startup.log"
+    set_locale(load_locale(PREFERENCES_PATH))
 
     def startup_log(message: str) -> None:
         try:
@@ -4350,13 +4437,13 @@ def main() -> None:
         except OSError:
             pass
 
-    startup_log("Avvio interfaccia.")
+    startup_log("Starting SRT Compass interface.")
     try:
         root = tk.Tk()
     except tk.TclError as exc:
         from tkinter import messagebox
 
-        messagebox.showerror("Avvio non riuscito", str(exc))
+        messagebox.showerror("SRT Compass", str(exc))
         startup_log(f"Creazione Tk non riuscita: {type(exc).__name__}: {exc}")
         return
     try:
@@ -4365,9 +4452,9 @@ def main() -> None:
         pass
     try:
         App(root)
-        startup_log("Widget principali creati.")
+        startup_log("Main widgets created.")
         root.update_idletasks()
-        startup_log("Aggiornamento iniziale Tk completato.")
+        startup_log("Initial Tk update completed.")
     except Exception as exc:  # noqa: BLE001 - mostra gli errori anche nel bundle GUI
         from tkinter import messagebox
 

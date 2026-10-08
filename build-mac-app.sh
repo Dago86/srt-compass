@@ -1,10 +1,10 @@
 #!/bin/zsh
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/video-sottotitoli-build.XXXXXX")"
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/srt-compass-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 DIST_DIR="$BUILD_DIR/dist"
-APP_PATH="$DIST_DIR/Video Sottotitoli.app"
+APP_PATH="$DIST_DIR/SRT Compass.app"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 YTDLP_PATH="$PROJECT_DIR/vendor/macos-arm64/yt-dlp_macos"
 DENO_PATH="$PROJECT_DIR/vendor/macos-arm64/deno"
@@ -22,7 +22,7 @@ ACTUAL_DENO_SHA256="$(shasum -a 256 "$DENO_PATH" | awk '{print $1}')"
   exit 1
 }
 export PYINSTALLER_CONFIG_DIR="$BUILD_DIR/pyinstaller-cache"
-python3 -m PyInstaller --noconfirm --windowed --name "Video Sottotitoli" \
+python3 -m PyInstaller --noconfirm --windowed --name "SRT Compass" \
   --osx-bundle-identifier "org.videosottotitoli.app" \
   --exclude-module tiktoken --exclude-module numpy --exclude-module scipy \
   --exclude-module pandas --exclude-module matplotlib --exclude-module PIL \
@@ -33,15 +33,15 @@ python3 -m PyInstaller --noconfirm --windowed --name "Video Sottotitoli" \
   --workpath "$BUILD_DIR/work" --specpath "$BUILD_DIR/spec" \
   "$PROJECT_DIR/run.py"
 PLIST="$APP_PATH/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.12.1" "$PLIST"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.12.1" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.13.0" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.13.0" "$PLIST"
 xattr -cr "$APP_PATH"
 codesign --force --deep --sign - "$APP_PATH"
 codesign --verify --deep --strict "$APP_PATH"
 mkdir -p "$OUTPUT_DIR"
-hdiutil create -volname "Video Sottotitoli 0.12.1" \
+hdiutil create -volname "SRT Compass 0.13.0" \
   -srcfolder "$APP_PATH" -ov -format UDZO \
-  "$BUILD_DIR/Video Sottotitoli 0.12.1.dmg"
-cp "$BUILD_DIR/Video Sottotitoli 0.12.1.dmg" \
-  "$OUTPUT_DIR/Video Sottotitoli 0.12.1.dmg"
-print "Build creata in $OUTPUT_DIR"
+  "$BUILD_DIR/SRT Compass 0.13.0.dmg"
+cp "$BUILD_DIR/SRT Compass 0.13.0.dmg" \
+  "$OUTPUT_DIR/SRT Compass 0.13.0.dmg"
+print "Build created in $OUTPUT_DIR"

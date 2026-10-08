@@ -1,23 +1,14 @@
-# Sicurezza
+# Security
 
-## Segnalare una vulnerabilità
+## Reporting a vulnerability
 
-Usare la funzione **Report a vulnerability** nella scheda Security del
-repository GitHub. Non pubblicare dettagli sfruttabili in una issue.
+Use **Report a vulnerability** in the repository Security tab. Do not publish
+exploitable details in an issue.
 
-Non allegare mai:
+Never attach API keys, Keychain contents, signed URLs, cookies, credentials,
+private media or unreviewed job folders and logs. Include the app version,
+macOS version, observed behavior and a minimal reproduction using invented
+data.
 
-- chiavi API o contenuto del Portachiavi;
-- URL firmati, cookie o credenziali;
-- video, audio o sottotitoli privati;
-- cartelle di lavoro o log non controllati.
-
-Indicare versione, versione di macOS, comportamento osservato e una riproduzione
-minima con dati inventati. Il progetto beta non garantisce tempi di risposta,
-ma le segnalazioni confermate verranno trattate prima della pubblicazione dei
-dettagli.
-
-## Versioni supportate
-
-Durante la beta riceve correzioni di sicurezza soltanto l'ultima versione sul
-ramo principale.
+During beta, security fixes are provided only for the latest version on the
+main branch.

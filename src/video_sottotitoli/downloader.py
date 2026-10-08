@@ -603,7 +603,7 @@ class DownloadWorker(threading.Thread):
             if self.output_name is not None:
                 manifest["output_name"] = self.output_name
             manifest.setdefault("staging_dir", str((job_dir / "staging").resolve()))
-            manifest.setdefault("destination_dir", str((Path.home() / "Downloads" / "Video Sottotitoli").resolve()))
+            manifest.setdefault("destination_dir", str((Path.home() / "Downloads" / "SRT Compass").resolve()))
             manifest.setdefault(
                 "filename_template",
                 "download-%(id)s.%(ext)s" if was_analyzed
@@ -631,7 +631,7 @@ class DownloadWorker(threading.Thread):
             "duration": metadata.get("duration"),
             "quality": self.quality,
             "audio_language": self.audio_language,
-            "destination_dir": str((self.destination_dir or Path.home() / "Downloads" / "Video Sottotitoli").resolve()),
+            "destination_dir": str((self.destination_dir or Path.home() / "Downloads" / "SRT Compass").resolve()),
             "staging_dir": str((job_dir / "staging").resolve()),
             "filename_template": "download-%(id)s.%(ext)s",
             "created_at": time.time(),

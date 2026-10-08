@@ -1,11 +1,10 @@
-# Contribuire
+# Contributing
 
-Grazie per l'interesse verso Video Sottotitoli.
+Thank you for your interest in SRT Compass.
 
-## Ambiente di sviluppo
+## Development environment
 
-Sono supportati Python 3.11–3.13 su macOS. Creare un ambiente virtuale e
-installare gli strumenti di sviluppo:
+Python 3.11–3.13 on macOS is supported:
 
 ```bash
 python3 -m venv .venv
@@ -14,10 +13,9 @@ python -m pip install --upgrade pip
 python -m pip install -e '.[dev]'
 ```
 
-FFmpeg e ffprobe sono necessari per i flussi multimediali, ma non per la
-maggior parte dei test unitari.
+FFmpeg and ffprobe are required for media workflows but not for most unit tests.
 
-## Prima di una pull request
+## Before opening a pull request
 
 ```bash
 ruff check src tests run.py
@@ -26,14 +24,12 @@ python -m unittest discover -s tests
 python scripts/check_repository.py
 ```
 
-- Non usare API reali o download di rete nei test automatici.
-- Non aggiungere media, SRT, log, registri di lavori o credenziali.
-- Aggiungere test per correzioni e cambiamenti di comportamento.
-- Conservare compatibilità con i registri esistenti oppure documentare la
-  migrazione.
-- Aggiornare documentazione e changelog quando cambia il comportamento visibile.
+- Do not use real APIs or network downloads in automated tests.
+- Do not commit media, SRT files, logs, job records or credentials.
+- Add tests for fixes and visible behavior changes.
+- Preserve saved-job compatibility or document the migration.
+- Keep English and Italian catalogs in sync.
+- Update documentation and the changelog when user-visible behavior changes.
 
-## Segnalazioni
-
-Per bug pubblici usare il template GitHub e una diagnostica già filtrata. Per
-problemi di sicurezza seguire [SECURITY.md](SECURITY.md).
+Use the GitHub issue templates for public bugs. Follow [SECURITY.md](SECURITY.md)
+for security reports.

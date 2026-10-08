@@ -1,20 +1,14 @@
-# Codice di condotta
+# Code of Conduct
 
-## Impegno
+Participants and maintainers commit to a welcoming, respectful and
+harassment-free environment regardless of experience, identity, ability,
+background or opinions.
 
-Partecipanti e maintainer si impegnano a mantenere un ambiente accogliente,
-rispettoso e privo di molestie, indipendentemente da esperienza, identità,
-abilità, provenienza o opinioni.
+Communicate respectfully, focus on technical merit, welcome good-faith
+questions, and protect privacy, copyright and personal data. Insults, threats,
+harassment, disclosure of private information and offensive content are not
+accepted. Maintainers may edit or remove contributions and limit participation
+when necessary.
 
-## Comportamento atteso
-
-- Comunicare con rispetto e concentrarsi sul merito tecnico.
-- Accogliere domande e feedback formulati in buona fede.
-- Rispettare privacy, copyright e dati personali.
-- Accettare le decisioni di moderazione del progetto.
-
-Insulti, minacce, molestie, pubblicazione di dati privati e contenuti offensivi
-non sono accettati. I maintainer possono modificare o rimuovere contributi e
-limitare la partecipazione quando necessario.
-
-Per segnalazioni riservate usare il canale indicato in `SECURITY.md`.
+Use the private channel described in [SECURITY.md](SECURITY.md) for confidential
+reports.

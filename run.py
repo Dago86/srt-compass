@@ -1,4 +1,4 @@
-"""Avvia Video Sottotitoli da un ambiente in cui il progetto è installato."""
+"""Start SRT Compass from an environment where the project is installed."""
 
 from video_sottotitoli.gui import main
 

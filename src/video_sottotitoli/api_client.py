@@ -40,7 +40,7 @@ def post_json(api_key: str, path: str, payload: dict[str, Any]) -> dict[str, Any
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "video-sottotitoli/0.11.0",
+            "User-Agent": "srt-compass/0.13.0",
         },
         method="POST",
     )
@@ -94,7 +94,7 @@ def post_transcription(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "video-sottotitoli/0.11.0",
+            "User-Agent": "srt-compass/0.13.0",
         },
         method="POST",
     )

@@ -54,16 +54,16 @@ def main() -> int:
         relative = path.relative_to(ROOT)
         suffix = path.suffix.casefold()
         if path.name.startswith(".env") and path.name != ".env.example":
-            problems.append(f"configurazione segreta inclusa: {relative}")
+            problems.append(f"secret configuration included: {relative}")
         if suffix in BLOCKED_SUFFIXES:
-            problems.append(f"artefatto o dato utente incluso: {relative}")
+            problems.append(f"generated artifact or user data included: {relative}")
         try:
             size = path.stat().st_size
         except OSError as exc:
-            problems.append(f"file non leggibile: {relative}: {exc}")
+            problems.append(f"unreadable file: {relative}: {exc}")
             continue
         if size > MAX_FILE_BYTES and suffix not in ALLOWED_LARGE_SUFFIXES:
-            problems.append(f"file oltre 5 MiB: {relative}")
+            problems.append(f"file larger than 5 MiB: {relative}")
         if size > 2 * 1024 * 1024:
             continue
         try:
@@ -72,14 +72,14 @@ def main() -> int:
             continue
         for pattern in SECRET_PATTERNS:
             if pattern.search(text):
-                problems.append(f"possibile segreto o percorso personale: {relative}")
+                problems.append(f"possible secret or personal path: {relative}")
                 break
     if problems:
-        print("Controllo repository non superato:", file=sys.stderr)
+        print("Repository check failed:", file=sys.stderr)
         for problem in sorted(set(problems)):
             print(f"- {problem}", file=sys.stderr)
         return 1
-    print("Repository pulito: nessun segreto o artefatto vietato rilevato.")
+    print("Repository clean: no secrets or prohibited artifacts found.")
     return 0
 
 

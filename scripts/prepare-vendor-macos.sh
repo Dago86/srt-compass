@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VENDOR_DIR="$PROJECT_DIR/vendor/macos-arm64"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/video-sottotitoli-vendor.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/srt-compass-vendor.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 YTDLP_VERSION="2026.08.19"

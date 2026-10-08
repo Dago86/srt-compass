@@ -1,23 +1,23 @@
-name: Proposta di funzionalità
-description: Proponi un miglioramento e descrivi il problema che risolve.
+name: Feature request
+description: Propose an improvement and describe the problem it solves.
 title: "[Feature] "
 labels: [enhancement]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Problema
-      description: Quale situazione dovrebbe migliorare?
+      label: Problem
+      description: Which situation should be improved?
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Comportamento proposto
+      label: Proposed behavior
     validations:
       required: true
   - type: textarea
     id: costs
     attributes:
-      label: Impatto su costi e dati
-      description: Indica se richiede nuove API, invii di dati o download.
+      label: Cost and data impact
+      description: State whether this requires new APIs, data transfers or downloads.

@@ -1,4 +1,4 @@
-"""Generazione e traduzione locale di sottotitoli SRT."""
+"""SRT Compass: transcribe, translate and improve SRT subtitles."""
 
-APP_NAME = "Video Sottotitoli"
-__version__ = "0.12.1"
+APP_NAME = "SRT Compass"
+__version__ = "0.13.0"

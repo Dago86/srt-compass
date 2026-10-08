@@ -1,83 +1,89 @@
-# Video Sottotitoli
+# SRT Compass
 
-Applicazione desktop macOS per creare, tradurre e migliorare sottotitoli SRT.
-Accetta video locali oppure singoli video pubblici tramite yt-dlp, permette di
-selezionare un intervallo e conserva i timestamp assoluti del contenuto.
+SRT Compass is a macOS desktop application for creating, translating and
+improving SRT subtitles. It accepts local videos or individual public video
+links, lets you select a time range, and keeps timestamps aligned to the
+original media timeline.
 
-> **Stato:** beta per macOS Apple Silicon. Il progetto è distribuito inizialmente
-> come codice sorgente. Non è firmato con Developer ID e non è notarizzato.
+> **Status:** beta for Apple Silicon Macs. The first public release contains
+> source code only. The app is not signed with an Apple Developer ID and is not
+> notarized.
 
-## Funzioni principali
+The interface is available in English and Italian. On first launch it follows
+the primary macOS language, falling back to English. Change it from
+**Settings → Interface Language**; SRT language choices remain independent.
 
-- Trascrizione di audio in italiano, inglese, giapponese e francese.
-- Traduzione finale in italiano, inglese o giapponese.
-- Selezione di inizio e fine del video, con stima del costo prima dell'avvio.
-- Traduzione, revisione contestuale e miglioramento della leggibilità di SRT.
-- Download da link con yt-dlp, avanzamento, interruzione e ripresa quando il sito
-  lo consente.
-- Risultato finale di massimo due righe per sottotitolo, con rapporto separato
-  per avvisi e parti non tradotte.
-- Scheda TXT facoltativa con temi, riassunto e fonti web.
+## Features
 
-## Requisiti
+- Transcribe speech in English, Italian, Japanese and French.
+- Produce final subtitles in the original language, English, Italian or Japanese.
+- Select a start and end time while preserving absolute video timestamps.
+- Translate, contextually revise and improve the readability of existing SRT files.
+- Download public videos with yt-dlp, including progress, cancellation and
+  resumable transfers when the source supports them.
+- Split long cues into readable subtitles of at most two lines and report any
+  estimated internal timing.
+- Optionally create a TXT brief with topics, a summary and web sources.
+- Resume saved transcription, translation and download jobs.
 
-- macOS su Apple Silicon.
-- Python 3.11, 3.12 o 3.13.
-- [FFmpeg](https://ffmpeg.org/) e `ffprobe` disponibili nel `PATH`.
-- Una chiave API OpenAI con credito disponibile per trascrizione, traduzione,
-  revisione e scheda informativa.
-- Connessione Internet per le API e per l'importazione da link.
+## Requirements
 
-Con Homebrew è possibile installare FFmpeg con:
+- macOS on Apple Silicon.
+- Python 3.11, 3.12 or 3.13.
+- [FFmpeg](https://ffmpeg.org/) and `ffprobe` available in `PATH`.
+- An OpenAI API key with available credit for paid operations.
+- Internet access for OpenAI operations and link downloads.
+
+Install FFmpeg with Homebrew:
 
 ```bash
 brew install ffmpeg
 ```
 
-## Installazione dal sorgente
+## Install from source
 
 ```bash
-git clone https://github.com/Dago86/video-sottotitoli.git
-cd video-sottotitoli
+git clone https://github.com/Dago86/srt-compass.git
+cd srt-compass
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
-video-sottotitoli
+srt-compass
 ```
 
-In alternativa, dal checkout si può eseguire `python run.py`.
+You can also run `python run.py` from a checkout.
 
-Al primo utilizzo aprire **Impostazioni → Configura chiave API…**. La chiave
-viene salvata nel Portachiavi macOS e non nei registri dell'app. Durante lo
-sviluppo è possibile copiare `.env.example` in `.env.local`; quest'ultimo è
-escluso da Git e non deve mai essere condiviso.
+On first use, open **Settings → Configure API key…**. SRT Compass stores the
+key in macOS Keychain and never writes it to application logs. Developers can
+copy `.env.example` to `.env.local`; that file is ignored by Git and must never
+be shared.
 
-## Uso essenziale
+## Basic workflow
 
-1. Scegliere un video locale oppure **Da link…**.
-2. Selezionare lingua parlata, lingua finale e intervallo.
-3. Scegliere la destinazione dell'SRT e controllare la stima.
-4. Premere **Genera sottotitoli**.
-5. Consultare il rapporto se il risultato contiene avvisi o parti non tradotte.
+1. Choose a local video or select **From link…**.
+2. Select the spoken language, final language and time range.
+3. Choose the SRT destination and review the estimate.
+4. Select **Generate subtitles**.
+5. Review the issue report if the result contains warnings or untranslated parts.
 
-I lavori incompleti vengono conservati sotto
-`~/Library/Application Support/VideoSottotitoli/` e possono essere ripresi da
-**Lavori recenti**. La pulizia dei file temporanei non elimina i risultati già
-pubblicati.
+Incomplete jobs remain under the legacy-compatible directory
+`~/Library/Application Support/VideoSottotitoli/` and are available from
+**Recent jobs**. Temporary-file cleanup does not remove published media or SRT
+results.
 
-## Costi e servizi esterni
+## Costs, privacy and external services
 
-Le operazioni OpenAI sono a carico dell'utente. Le stime mostrate dall'app non
-sono limiti massimi di spesa. Il download non avvia automaticamente richieste
-OpenAI. Per maggiori dettagli sui dati trattati vedere [PRIVACY.md](PRIVACY.md).
+OpenAI usage is billed to the API key owner. Estimates shown by the app are not
+spending limits. Downloading a video does not start an OpenAI request. See
+[PRIVACY.md](PRIVACY.md) for the data sent during each operation.
 
-Il supporto dei siti dipende da yt-dlp e può cambiare. Sono esclusi playlist,
-live, DRM, cookie e flussi che richiedono autenticazione. Il recupero dei byte
-parziali non è garantito da ogni sito. L'utente è responsabile di avere il
-diritto di scaricare e trattare i contenuti scelti.
+Website support depends on yt-dlp and may change. Playlists, live streams, DRM,
+cookies and authenticated sources are outside the supported workflow. Not every
+website supports resuming from partial bytes. Users are responsible for having
+the right to download and process the selected content.
 
-## Sviluppo
+## Development
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -87,11 +93,10 @@ python -m unittest discover -s tests
 python scripts/check_repository.py
 ```
 
-I test usano risposte simulate e non devono effettuare chiamate API a pagamento
-o download reali. Le istruzioni per contribuire sono in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Tests use simulated services and must not make paid API requests or real media
+downloads. See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes.
 
-## Build macOS locale
+## Local macOS build
 
 ```bash
 python -m pip install -e '.[packaging]'
@@ -99,32 +104,32 @@ python -m pip install -e '.[packaging]'
 ./build-mac-app.sh
 ```
 
-Lo script di preparazione scarica yt-dlp e Deno dalle release ufficiali e ne
-verifica i checksum. I binari e il DMG generato restano esclusi dal repository.
-La build risultante usa una firma locale ad hoc e non è destinata alla
-distribuzione pubblica.
+The preparation script downloads pinned yt-dlp and Deno releases from their
+official upstream sources and verifies their checksums. Downloaded binaries and
+the generated DMG are ignored by Git. The build uses an ad-hoc local signature
+and is not intended as a notarized public binary.
 
-## Limiti della beta
+## Beta limitations
 
-- Interfaccia e packaging sono verificati principalmente su Apple Silicon.
-- I tempi creati dividendo blocchi molto lunghi sono stimati dal testo e non
-  riallineati all'audio.
-- Una traduzione contestuale può richiedere controllo umano, soprattutto per
-  nomi propri, numeri e passaggi ambigui.
-- `whisper-1` è previsto in disattivazione il 26 febbraio 2027; la migrazione
-  dovrà conservare i timestamp e la compatibilità dei lavori.
+- Packaging and interface testing currently focus on Apple Silicon Macs.
+- Timing created when splitting very long cues is estimated from text and is not
+  realigned against the audio.
+- Contextual translation still requires human review for names, numbers and
+  ambiguous passages.
+- `whisper-1` is scheduled for retirement on February 26, 2027; its replacement
+  must preserve timestamps and saved-job compatibility.
 
-## Documentazione
+## Documentation
 
-- [Architettura](docs/architettura.md)
-- [Requisiti](docs/requisiti.md)
-- [Piano di test](docs/piano-di-test.md)
+- [Architecture](docs/architecture.md)
+- [Requirements](docs/requirements.md)
+- [Test plan](docs/test-plan.md)
 - [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
-- [Avvisi di terze parti](THIRD_PARTY_NOTICES.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-## Licenza
+## License
 
-Il codice è distribuito con licenza [MIT](LICENSE). yt-dlp, Deno e gli altri
-componenti mantengono le rispettive licenze descritte in
+SRT Compass is available under the [MIT License](LICENSE). yt-dlp, Deno and
+other components retain the licenses listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,42 +1,47 @@
 # Changelog
 
-Il progetto segue [Semantic Versioning](https://semver.org/).
+The project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.13.0] - 2026-10-08
 
-- Preparazione del repository per la pubblicazione open source.
-- Build riproducibile con dipendenze binarie scaricate e verificate.
+- Renamed the project and macOS application to SRT Compass.
+- Added English and Italian interface catalogs.
+- Added macOS language detection and a persisted interface-language setting.
+- Separated stable media language codes from localized display labels.
+- Rewrote the public README and current project documentation in English.
+- Preserved the legacy application data directory, Keychain service and bundle
+  identifier for upgrades from Video Sottotitoli.
 
 ## [0.12.1] - 2026-10-07
 
-- Aggiunto il francese tra le lingue parlate supportate.
-- Mantenute italiano, inglese e giapponese come destinazioni di traduzione.
+- Added French as a supported spoken language.
+- Kept Italian, English and Japanese as translation targets.
 
 ## [0.12.0] - 2026-09-29
 
-- Riorganizzata l'interfaccia attorno a sorgente, attività e risultato.
-- Migliorati dettagli, lavori recenti e gestione dei file temporanei.
+- Reorganized the interface around source, activity and result.
+- Improved job history and temporary file management.
 
 ## [0.11.0] - 2026-09-29
 
-- Aggiunta la segmentazione locale dei sottotitoli troppo lunghi.
+- Added local segmentation for overly long subtitle cues.
 
 ## [0.10.0] - 2026-09-26
 
-- Migliorati avanzamento e gestione degli stati del downloader.
+- Improved downloader progress and state handling.
 
 ## [0.9.0] - 2026-09-24
 
-- Aggiunta la scheda informativa TXT facoltativa.
+- Added the optional TXT information brief.
 
 ## [0.7.1] - 2026-09-24
 
-- Introdotto il flusso unico da video a SRT finale con recupero parziale.
+- Introduced the unified video-to-final-SRT workflow with partial recovery.
 
 ## [0.6.0] - 2026-09-23
 
-- Aggiunti download da link, cronologia eventi e log persistenti.
+- Added link downloads, event history and persistent logs.
 
 ## [0.5.0] - 2026-09-22
 
-- Aggiunte trascrizione multilingue, traduzione e revisione contestuale.
+- Added multilingual transcription, translation and contextual revision.

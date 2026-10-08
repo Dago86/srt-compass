@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Vulnerabilità di sicurezza
-    url: https://github.com/Dago86/video-sottotitoli/security/advisories/new
+    url: https://github.com/Dago86/srt-compass/security/advisories/new
     about: Segnala privatamente una vulnerabilità.

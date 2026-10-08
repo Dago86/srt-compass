@@ -6,14 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Lingue selezionabili come destinazione. Il francese resta una lingua sorgente:
-# scegliendo "Originale" l'SRT viene consegnato in francese, ma non viene
-# proposto come destinazione di traduzione.
-LANGUAGES = {
-    "en": "Inglese",
-    "it": "Italiano",
-    "ja": "Giapponese",
-}
+# Stable language codes. Display labels belong to the localization layer.
+TARGET_LANGUAGE_CODES = ("en", "it", "ja")
+SOURCE_LANGUAGE_CODES = ("auto", "en", "it", "ja", "fr")
+
+# Legacy names are kept for prompt and old-job compatibility. The interface no
+# longer uses these values; it renders labels through i18n.language_label().
+LANGUAGES = {"en": "Inglese", "it": "Italiano", "ja": "Giapponese"}
 
 LANGUAGE_NAMES = {
     **LANGUAGES,
@@ -25,13 +24,9 @@ SOURCE_LANGUAGES = {
     **LANGUAGE_NAMES,
 }
 
-LANGUAGE_CODES_BY_LABEL = {
-    label: code for code, label in LANGUAGES.items()
-}
-
-SOURCE_LANGUAGE_CODES_BY_LABEL = {
-    label: code for code, label in SOURCE_LANGUAGES.items()
-}
+# Deprecated compatibility maps. New UI code stores codes directly.
+LANGUAGE_CODES_BY_LABEL = {label: code for code, label in LANGUAGES.items()}
+SOURCE_LANGUAGE_CODES_BY_LABEL = {label: code for code, label in SOURCE_LANGUAGES.items()}
 
 PROJECT_ROOT = (
     Path(sys.executable).resolve().parent
@@ -39,6 +34,7 @@ PROJECT_ROOT = (
     else Path(__file__).resolve().parents[2]
 )
 APP_SUPPORT = Path.home() / "Library" / "Application Support" / "VideoSottotitoli"
+PREFERENCES_PATH = APP_SUPPORT / "preferences.json"
 JOBS_DIR = APP_SUPPORT / "jobs"
 REVISION_JOBS_DIR = APP_SUPPORT / "revision-jobs"
 DOWNLOAD_JOBS_DIR = APP_SUPPORT / "download-jobs"

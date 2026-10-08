@@ -1,15 +1,16 @@
-## Cambiamento
+## Change
 
-Descrivi il problema e il comportamento risultante.
+Describe the problem and resulting behavior.
 
-## Verifiche
+## Verification
 
-- [ ] Test automatici aggiunti o aggiornati
-- [ ] Ruff, compilazione e suite completi
-- [ ] Nessuna chiamata API o download reale nei test
-- [ ] Nessuna credenziale, media, SRT o log incluso
-- [ ] Documentazione aggiornata, se necessario
+- [ ] Automated tests added or updated
+- [ ] Ruff, compilation and the full suite pass
+- [ ] No real API calls or downloads in tests
+- [ ] No credentials, media, SRT files or logs included
+- [ ] English and Italian catalogs remain in sync
+- [ ] Documentation updated when needed
 
-## Compatibilità e costi
+## Compatibility and cost
 
-Indica l'impatto su registri esistenti, richieste API, tentativi e stime di costo.
+Describe the effect on saved jobs, API requests, retries and cost estimates.

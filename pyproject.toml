@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "video-sottotitoli"
-version = "0.12.1"
-description = "Applicazione macOS per trascrivere, tradurre e migliorare sottotitoli SRT."
+name = "srt-compass"
+version = "0.13.0"
+description = "A macOS app for transcribing, translating and improving SRT subtitles."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -28,11 +28,11 @@ dev = ["ruff>=0.12,<1", "pip-audit>=2.9,<3"]
 packaging = ["pyinstaller>=6,<7"]
 
 [project.gui-scripts]
-video-sottotitoli = "video_sottotitoli.gui:main"
+srt-compass = "video_sottotitoli.gui:main"
 
 [project.urls]
-Repository = "https://github.com/Dago86/video-sottotitoli"
-Issues = "https://github.com/Dago86/video-sottotitoli/issues"
+Repository = "https://github.com/Dago86/srt-compass"
+Issues = "https://github.com/Dago86/srt-compass/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
