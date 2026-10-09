@@ -32,6 +32,8 @@ the primary macOS language, falling back to English. Change it from
 - Python 3.11, 3.12 or 3.13.
 - [FFmpeg](https://ffmpeg.org/) and `ffprobe` available in `PATH`.
 - An OpenAI API key with available credit for paid operations.
+- An optional DeepSeek API key for subtitle translation or contextual revision
+  with DeepSeek Flash or DeepSeek Pro.
 - Internet access for OpenAI operations and link downloads.
 
 Install FFmpeg with Homebrew:
@@ -54,18 +56,22 @@ srt-compass
 
 You can also run `python run.py` from a checkout.
 
-On first use, open **Settings → Configure API key…**. SRT Compass stores the
-key in macOS Keychain and never writes it to application logs. Developers can
-copy `.env.example` to `.env.local`; that file is ignored by Git and must never
-be shared.
+On first use, open **Settings → Configure API key…** and choose OpenAI or
+DeepSeek. SRT Compass stores each key in a separate macOS Keychain entry and
+never writes keys to application logs. Developers can copy `.env.example` to
+`.env.local`; that file is ignored by Git and must never be shared.
 
 ## Basic workflow
 
 1. Choose a local video or select **From link…**.
 2. Select the spoken language, final language and time range.
 3. Choose the SRT destination and review the estimate.
-4. Select **Generate subtitles**.
-5. Review the issue report if the result contains warnings or untranslated parts.
+4. Select **Generate transcription**. The original-language SRT is saved first.
+5. Review the local translation estimate and select **Start translation** when
+   you want the final-language SRT. If you selected **Original**, this step is
+   skipped.
+6. Review the issue report if the result contains warnings or untranslated
+   parts.
 
 Incomplete jobs remain under the legacy-compatible directory
 `~/Library/Application Support/VideoSottotitoli/` and are available from
@@ -74,8 +80,10 @@ results.
 
 ## Costs, privacy and external services
 
-OpenAI usage is billed to the API key owner. Estimates shown by the app are not
-spending limits. Downloading a video does not start an OpenAI request. See
+OpenAI and DeepSeek usage is billed to the respective API key owner. Estimates
+shown by the app are not spending limits. Audio transcription and the TXT web
+brief use OpenAI; subtitle translation and contextual revision can use either
+OpenAI or DeepSeek. Downloading a video does not start an AI request. See
 [PRIVACY.md](PRIVACY.md) for the data sent during each operation.
 
 Website support depends on yt-dlp and may change. Playlists, live streams, DRM,

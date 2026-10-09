@@ -81,6 +81,8 @@ class WorkerRangeTests(unittest.TestCase):
             )
             self.assertEqual(completed["effective_language"], "fr")
             self.assertEqual(completed["target_language"], "it")
+            self.assertEqual(manifest["workflow_stage"], "transcription_completed")
+            self.assertEqual(manifest["transcription_output"], str(output.resolve()))
 
     def test_simulated_transcription_keeps_selected_absolute_offset(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

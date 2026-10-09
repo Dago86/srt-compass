@@ -3,13 +3,15 @@
 SRT Compass is a local application and does not operate its own server. Some
 features send data to external services only after an explicit user action.
 
-## OpenAI
+## OpenAI and DeepSeek
 
 - Transcription sends audio extracted from the selected time range.
-- Translation and revision send subtitle text and optional context.
+- Translation and revision send subtitle text and optional context to the
+  provider selected for that job. OpenAI is the default; DeepSeek is optional.
 - The optional TXT brief sends SRT text and may use web search.
 - The API key is read from the environment or macOS Keychain. The
   `.env.local` fallback is for development only.
+- OpenAI and DeepSeek keys are stored under separate Keychain accounts.
 
 ## Link downloads
 

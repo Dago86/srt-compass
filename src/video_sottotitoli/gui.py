@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, ClassVar
 
 from .config import (
+    AI_PROVIDERS,
     DOWNLOAD_JOBS_DIR,
     LANGUAGE_NAMES,
     LANGUAGES,
@@ -20,11 +21,15 @@ from .config import (
     MODEL_SOL,
     MODEL_SOL_LEGACY,
     PREFERENCES_PATH,
+    PROVIDER_DEEPSEEK,
+    PROVIDER_MODELS,
+    PROVIDER_OPENAI,
     REVISION_JOBS_DIR,
     SOURCE_LANGUAGES,
     estimate_cost_usd,
     load_api_key,
-    save_api_key,
+    load_provider_api_key,
+    save_provider_api_key,
 )
 from .downloader import (
     DownloadError,
@@ -1355,6 +1360,7 @@ class RevisionDialog(tk.Toplevel):
         self.source_language_var = tk.StringVar(value=source_language or "")
         self.target_language_var = tk.StringVar(value=target_language)
         self.model_var = tk.StringVar(value=default_model(self.mode_var.get(), operation))
+        self.provider_var = tk.StringVar(value=PROVIDER_OPENAI)
         self.context_var = tk.StringVar()
         self.mode_help_var = tk.StringVar()
         self.estimate_var = tk.StringVar()
@@ -1416,9 +1422,15 @@ class RevisionDialog(tk.Toplevel):
             self.source_language.bind("<<ComboboxSelected>>", self._settings_changed)
             self.target_language.bind("<<ComboboxSelected>>", self._settings_changed)
         ttk.Label(settings, text=tr("dialog.model")).pack(side="left")
+        self.provider_combo = ttk.Combobox(
+            settings, width=12, state="readonly", textvariable=self.provider_var,
+            values=list(AI_PROVIDERS),
+        )
+        self.provider_combo.pack(side="left", padx=(4, 6))
+        self.provider_combo.bind("<<ComboboxSelected>>", self._provider_changed)
         self.model_combo = ttk.Combobox(
             settings, width=25, state="readonly", textvariable=self.model_var,
-            values=[MODEL_SOL, MODEL_SOL_LEGACY, MODEL_MINI],
+            values=list(PROVIDER_MODELS[PROVIDER_OPENAI]),
         )
         self.model_combo.pack(side="left", padx=5)
         self.model_combo.bind("<<ComboboxSelected>>", self._settings_changed)
@@ -1606,6 +1618,20 @@ class RevisionDialog(tk.Toplevel):
         self._update_mode_help()
         self._schedule_preview()
 
+    def _provider_changed(self, _event: object | None = None) -> None:
+        provider = self.provider_var.get() if hasattr(self, "provider_var") else self.translation_provider_var.get()
+        models = list(PROVIDER_MODELS.get(provider, PROVIDER_MODELS[PROVIDER_OPENAI]))
+        combo = self.model_combo if hasattr(self, "model_combo") else self.translation_model_combo
+        combo.configure(values=models)
+        current = self.model_var.get() if hasattr(self, "model_var") else self.translation_model_var.get()
+        if current not in models:
+            current = models[0]
+            (self.model_var if hasattr(self, "model_var") else self.translation_model_var).set(current)
+        if hasattr(self, "_schedule_preview"):
+            self._schedule_preview()
+        else:
+            self._update_translation_estimate()
+
     def _settings_changed(self, _event: object | None = None) -> None:
         if self.operation == OPERATION_TRANSLATION:
             source_label = self.source_language.get()
@@ -1666,11 +1692,12 @@ class RevisionDialog(tk.Toplevel):
                 and self.source_language_var.get() not in LANGUAGES):
             messagebox.showerror("Lingua originale", "Scegli la lingua del file SRT.", parent=self)
             return
-        api_key = load_api_key()
+        provider = self.provider_var.get() or PROVIDER_OPENAI
+        api_key = load_provider_api_key(provider)
         if not api_key:
             messagebox.showerror(
                 "Chiave API mancante",
-                "Configura prima la chiave API OpenAI.",
+                f"Configura prima la chiave API {provider}.",
                 parent=self,
             )
             return
@@ -1691,6 +1718,7 @@ class RevisionDialog(tk.Toplevel):
             operation=self.operation, source_language=self.source_language_var.get(),
             target_language=self.target_language_var.get(), model=self.model_var.get(),
             user_context=self.context_var.get(),
+            provider=provider,
         )
         self.worker.start()
         self.started_at = time.monotonic()
@@ -1698,14 +1726,6 @@ class RevisionDialog(tk.Toplevel):
         self.status_var.set("Creo il lavoro di revisione…")
 
     def resume_revision(self, job_dir: Path | None = None) -> None:
-        api_key = load_api_key()
-        if not api_key:
-            messagebox.showerror(
-                "Chiave API mancante",
-                "Configura prima la chiave API OpenAI.",
-                parent=self,
-            )
-            return
         if job_dir is None:
             job_dir = self.current_job_dir or self._find_resumable_job()
         if job_dir is None:
@@ -1740,6 +1760,13 @@ class RevisionDialog(tk.Toplevel):
                 self.source_language.set(language_label(self.source_language_var.get()))
                 self.target_language.set(language_label(self.target_language_var.get()))
             self.model_var.set(str(manifest["model"]))
+            provider = str(manifest.get("provider", PROVIDER_OPENAI))
+            self.provider_var.set(provider)
+            self.provider_combo.set(provider)
+            self._provider_changed()
+            api_key = load_provider_api_key(provider)
+            if not api_key:
+                raise ValueError(f"Manca la chiave API {provider} per riprendere il lavoro.")
             self.context_var.set(str(manifest.get("user_context", "")))
             self._update_mode_help()
             self.caption_var.set(tr("dialog.captions", count=manifest["caption_count"]))
@@ -1760,6 +1787,7 @@ class RevisionDialog(tk.Toplevel):
                 source_language=self.source_language_var.get(),
                 target_language=self.target_language_var.get(),
                 model=self.model_var.get(), user_context=self.context_var.get(),
+                provider=provider,
             )
             self.current_job_dir = job_dir
             self._prepare_run()
@@ -2000,6 +2028,7 @@ class App(ttk.Frame):
         self.translation_source_var = tk.StringVar()
         self.translation_target_var = tk.StringVar(value="it")
         self.translation_model_var = tk.StringVar(value=MODEL_SOL)
+        self.translation_provider_var = tk.StringVar(value=PROVIDER_OPENAI)
         self.translation_context_var = tk.StringVar()
         self.summary_checkbox_var = tk.BooleanVar(value=False)
         self.summary_worker: SummaryWorker | None = None
@@ -2023,11 +2052,14 @@ class App(ttk.Frame):
         self.result_report_path: Path | None = None
         self.translation_context_var = tk.StringVar()
         self.translation_model_var = tk.StringVar(value=MODEL_SOL)
+        self.translation_provider_var = tk.StringVar(value=PROVIDER_OPENAI)
         self.current_job_path: Path | None = None
         self.transcription_job_path: Path | None = None
         self.translation_job_path: Path | None = None
         self.final_output_path: Path | None = None
-        self.auto_translate_pending = False
+        # True only after the original transcript is available and the user can
+        # explicitly start the separate translation step.
+        self.ready_to_translate = False
         self.workflow_active = False
         self.probe_events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.video_var = tk.StringVar()
@@ -2238,10 +2270,20 @@ class App(ttk.Frame):
         self.advanced_frame.columnconfigure(1, weight=1)
         model_row = ttk.Frame(self.advanced_frame)
         model_row.grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(model_row, text="Provider AI").pack(side="left")
+        self.translation_provider_combo = ttk.Combobox(
+            model_row, width=12, state="readonly",
+            textvariable=self.translation_provider_var,
+            values=list(AI_PROVIDERS),
+        )
+        self.translation_provider_combo.pack(side="left", padx=(8, 8))
+        self.translation_provider_combo.bind(
+            "<<ComboboxSelected>>", self._provider_changed
+        )
         ttk.Label(model_row, text=tr("main.translation_model")).pack(side="left")
         self.translation_model_combo = ttk.Combobox(
             model_row, width=23, state="readonly", textvariable=self.translation_model_var,
-            values=[MODEL_SOL, MODEL_SOL_LEGACY, MODEL_MINI],
+            values=list(PROVIDER_MODELS[PROVIDER_OPENAI]),
         )
         self.translation_model_combo.pack(side="left", padx=(8, 6))
         self.translation_model_combo.bind("<<ComboboxSelected>>", self._update_translation_estimate)
@@ -2348,7 +2390,7 @@ class App(ttk.Frame):
         )
         self.resume_button = ttk.Button(actions, text=tr("main.resume"), command=self.resume)
         self.start_button = ttk.Button(
-            actions, text=tr("main.generate"), command=self.start, state="disabled"
+            actions, text=tr("main.generate_transcription"), command=self.start, state="disabled"
         )
         self.footer_open_button = ttk.Button(
             actions, text=tr("main.open_srt"), command=self._open_result
@@ -2371,7 +2413,10 @@ class App(ttk.Frame):
         self.master.tools_menu = tools_menu
         menu.add_cascade(label=tr("menu.tools"), menu=tools_menu)
         settings_menu = tk.Menu(menu, tearoff=False)
-        settings_menu.add_command(label=tr("menu.api_key"), command=self.configure_key)
+        api_menu = tk.Menu(settings_menu, tearoff=False)
+        api_menu.add_command(label="OpenAI…", command=lambda: self.configure_provider_key(PROVIDER_OPENAI))
+        api_menu.add_command(label="DeepSeek…", command=lambda: self.configure_provider_key(PROVIDER_DEEPSEEK))
+        settings_menu.add_cascade(label=tr("menu.api_key"), menu=api_menu)
         language_menu = tk.Menu(settings_menu, tearoff=False)
         self.ui_locale_var = tk.StringVar(value=get_locale())
         language_menu.add_radiobutton(
@@ -2480,9 +2525,19 @@ class App(ttk.Frame):
 
     def _refresh_model_summary(self, *_args: object) -> None:
         model = self.translation_model_var.get() or MODEL_SOL
-        text = tr("main.model_selected", model=model)
+        provider = self.translation_provider_var.get() or PROVIDER_OPENAI
+        text = tr("main.model_selected", model=f"{provider} · {model}")
         if hasattr(self, "model_summary_var"):
             self.model_summary_var.set(text)
+
+    def _provider_changed(self, _event: object | None = None) -> None:
+        provider = self.translation_provider_var.get() or PROVIDER_OPENAI
+        models = list(PROVIDER_MODELS.get(provider, PROVIDER_MODELS[PROVIDER_OPENAI]))
+        self.translation_model_combo.configure(values=models)
+        if self.translation_model_var.get() not in models:
+            self.translation_model_var.set(models[0])
+        self._refresh_model_summary()
+        self._update_translation_estimate()
 
     def _refresh_work_summary(self) -> None:
         if self._active_download():
@@ -2567,6 +2622,7 @@ class App(ttk.Frame):
         self.job_resumable = False
         self.translation_source = None
         self.translation_captions = []
+        self.ready_to_translate = False
         self.open_result_button.configure(state="disabled")
         self.show_finder_button.configure(state="disabled")
         self.show_issues_button.configure(state="disabled")
@@ -2798,7 +2854,7 @@ class App(ttk.Frame):
         )
         ttk.Label(
             layout,
-            text="La traduzione si stima dopo la trascrizione; Genera sottotitoli avvia entrambe le fasi.",
+            text="La trascrizione viene salvata prima della traduzione. Avvia traduzione è sempre un comando esplicito.",
             foreground="#555555",
         ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(4, 10))
         self.progress = ttk.Progressbar(layout, mode="determinate")
@@ -2820,7 +2876,7 @@ class App(ttk.Frame):
         )
         self.cancel_button.pack(side="right")
         self.start_button = ttk.Button(
-            buttons, text="Genera sottotitoli", command=self.start, state="disabled"
+            buttons, text=tr("main.generate_transcription"), command=self.start, state="disabled"
         )
         self.start_button.pack(side="right", padx=(0, 8))
         self.resume_button = ttk.Button(buttons, text="Riprendi", command=self.resume)
@@ -2947,6 +3003,10 @@ class App(ttk.Frame):
         self.translation_model_combo.configure(
             state="readonly" if translation_ready else "disabled"
         )
+        if hasattr(self, "translation_provider_combo"):
+            self.translation_provider_combo.configure(
+                state="readonly" if translation_ready else "disabled"
+            )
         self.translation_context_entry.configure(
             state="normal" if translation_ready else "disabled"
         )
@@ -3021,12 +3081,21 @@ class App(ttk.Frame):
             )
             self.resume_button.configure(text=label, command=self.resume)
             self.resume_button.pack(side="right")
+        elif self.ready_to_translate and self.translation_source:
+            self.start_button.configure(
+                text=tr("main.start_translation"),
+                command=self._start_translation,
+                state="normal" if self.translation_captions else "disabled",
+            )
+            self.start_button.pack(side="right")
         elif self.final_output_path and self.final_output_path.is_file():
             self.footer_open_button.pack(side="right")
         elif self.workflow_active:
             pass
         elif self.media:
-            self.start_button.configure(text=tr("main.generate"), command=self.start)
+            self.start_button.configure(
+                text=tr("main.generate_transcription"), command=self.start
+            )
             self.start_button.configure(
                 state="normal" if self.start_button.instate(["!disabled"]) else "disabled"
             )
@@ -3057,7 +3126,7 @@ class App(ttk.Frame):
                     Path(self.translation_source), self.final_output_path
                 )
                 self._set_result(self.final_output_path)
-            self.auto_translate_pending = False
+            self.ready_to_translate = False
             self.workflow_active = False
             self._set_workflow_controls(True)
             self.status_var.set(
@@ -3065,7 +3134,6 @@ class App(ttk.Frame):
             )
             self._set_busy(False)
             return
-        self.auto_translate_pending = selected != "auto"
         self.status_var.set("Lingua parlata selezionata · preparo la traduzione.")
         self._update_translation_estimate()
 
@@ -3083,6 +3151,7 @@ class App(ttk.Frame):
             self.status_var.set(f"Sottotitoli salvati: {result['output']}")
             self._set_result(result["output"])
             self.workflow_active = False
+            self.ready_to_translate = False
             self._set_workflow_controls(True)
             if self.summary_requested:
                 self._prepare_summary_for_srt(
@@ -3101,6 +3170,7 @@ class App(ttk.Frame):
             self.status_var.set(f"Sottotitoli salvati: {final_output}")
             self._set_result(final_output)
             self.workflow_active = False
+            self.ready_to_translate = False
             self._set_workflow_controls(True)
             if self.summary_requested:
                 self._prepare_summary_for_srt(
@@ -3114,19 +3184,41 @@ class App(ttk.Frame):
         self.translation_model_var.set(
             str(result.get("target_model") or self.translation_model_var.get())
         )
+        self.translation_provider_var.set(
+            str(result.get("translation_provider") or PROVIDER_OPENAI)
+        )
+        self._provider_changed()
         self.translation_context_var.set(
             str(result.get("translation_context") or self.translation_context_var.get())
         )
         self.final_output_path = Path(
             str(result.get("final_output") or self.final_output_path or self.output_var.get())
         )
-        self.auto_translate_pending = True
+        self.ready_to_translate = True
+        self.workflow_active = False
+        try:
+            if self.transcription_job_path and self.transcription_job_path.is_dir():
+                manifest = load_job(self.transcription_job_path)
+                manifest.update({
+                    "workflow_stage": "ready_to_translate",
+                    "transcription_output": str(Path(result["output"]).resolve()),
+                    "final_output": str(self.final_output_path.resolve()),
+                })
+                save_job(self.transcription_job_path, manifest)
+        except (OSError, ValueError, KeyError):
+            # The transcript remains usable even if only the phase metadata fails.
+            pass
         self.translation_estimate_var.set(
             "Trascrizione completata. Calcolo la stima della traduzione…"
+        )
+        self.result_summary_var.set(
+            f"Trascrizione originale pronta · {Path(result['output']).name}. "
+            "La traduzione non è ancora stata avviata."
         )
         self.status_var.set("Trascrizione completata · preparo la traduzione.")
         if source == "auto":
             self.source_language.configure(state="readonly")
+        self._set_workflow_controls(True)
         self._update_translation_estimate()
 
     def open_download_dialog(self) -> None:
@@ -3454,12 +3546,10 @@ class App(ttk.Frame):
             self.translation_estimate_var.set(f"Stima non disponibile: {error}")
             if self.worker is None and self.translation_worker is None:
                 self._set_busy(False)
-            if self.auto_translate_pending:
-                self.auto_translate_pending = False
-                self.status_var.set(
-                    "Stima non disponibile; avvio la traduzione autorizzata."
-                )
-                self.master.after(250, self._start_translation)
+            self.status_var.set(
+                "Stima non disponibile. Puoi comunque avviare la traduzione esplicitamente."
+            )
+            self.master.after_idle(self._update_footer_state)
             return
         qualifier = " (approssimativa)" if estimate.approximate else ""
         self.translation_estimate_var.set(
@@ -3470,19 +3560,24 @@ class App(ttk.Frame):
         self.progress.configure(maximum=max(1, estimate.group_count), value=0)
         if self.worker is None and self.translation_worker is None:
             self._set_busy(False)
-        if self.auto_translate_pending:
-            self.auto_translate_pending = False
-            self.master.after(500, self._start_translation)
+        self.status_var.set(
+            "Trascrizione pronta. Premi Avvia traduzione per creare l’SRT finale."
+        )
+        self.master.after_idle(self._update_footer_state)
 
     def _start_translation(self) -> None:
-        if not self.translation_source or self.translation_worker:
+        if not self.ready_to_translate or not self.translation_source or self.translation_worker:
             return
         source_code = self.translation_source_var.get()
         if source_code not in LANGUAGE_NAMES:
             return
-        api_key = load_api_key()
+        provider = self.translation_provider_var.get() or PROVIDER_OPENAI
+        api_key = load_provider_api_key(provider)
         if not api_key:
-            messagebox.showerror("Chiave API mancante", "Configura la chiave API OpenAI.")
+            messagebox.showerror(
+                "Chiave API mancante",
+                f"Configura la chiave API per {provider} nelle Impostazioni.",
+            )
             return
         source = Path(self.translation_source)
         target = self.translation_target_var.get()
@@ -3499,8 +3594,18 @@ class App(ttk.Frame):
             target_language=target, model=self.translation_model_var.get(),
             user_context=self.translation_context_var.get(),
             parent_job=str(self.transcription_job_path) if self.transcription_job_path else None,
+            provider=provider,
         )
         self.translation_worker.start()
+        self.ready_to_translate = False
+        self.workflow_active = True
+        if self.transcription_job_path and self.transcription_job_path.is_dir():
+            try:
+                manifest = load_job(self.transcription_job_path)
+                manifest["workflow_stage"] = "translation"
+                save_job(self.transcription_job_path, manifest)
+            except (OSError, ValueError, KeyError):
+                pass
         self.cancel_requested = False
         self.cancel_button.configure(text="Interrompi")
         self.activity_started_at = time.monotonic()
@@ -3519,6 +3624,7 @@ class App(ttk.Frame):
 
     def _finish_translation(self) -> None:
         self.translation_worker = None
+        self.ready_to_translate = False
         self.cancel_requested = False
         self.cancel_button.configure(text="Interrompi")
         self.workflow_active = False
@@ -3556,6 +3662,7 @@ class App(ttk.Frame):
         self.master.minsize(760, 630)
         self.translation_source = None
         self.translation_captions = []
+        self.ready_to_translate = False
         self.final_output_path = None
         self.result_report_path = None
         self.current_job_path = None
@@ -3761,6 +3868,7 @@ class App(ttk.Frame):
         self.summary_result_var.set("")
         self.open_summary_button.configure(state="disabled")
         self.translation_model_var.set(self.translation_model_combo.get() or MODEL_SOL)
+        self.translation_provider_var.set(self.translation_provider_combo.get() or PROVIDER_OPENAI)
         self.final_output_path = output
         self.translation_captions = []
         self.translation_source = None
@@ -3781,7 +3889,8 @@ class App(ttk.Frame):
         self.transcription_job_path = None
         self.current_job_path = None
         self.job_resumable = False
-        self.workflow_active = target_language != "original"
+        self.ready_to_translate = False
+        self.workflow_active = True
         self._set_workflow_controls(False)
         self.worker = SubtitleWorker(
             self.media.path,
@@ -3797,6 +3906,7 @@ class App(ttk.Frame):
             self.translation_context_var.get(),
             str(output),
             create_summary=self.summary_requested,
+            translation_provider=self.translation_provider_var.get(),
         )
         self.worker.start()
         self.cancel_requested = False
@@ -3813,9 +3923,12 @@ class App(ttk.Frame):
         self._set_workflow_controls(False)
 
     def configure_key(self) -> None:
+        self.configure_provider_key(PROVIDER_OPENAI)
+
+    def configure_provider_key(self, provider: str) -> None:
         key = simpledialog.askstring(
             "Configura chiave API",
-            "Incolla la chiave API OpenAI. Verrà salvata nel Portachiavi macOS.",
+            f"Incolla la chiave API {provider}. Verrà salvata nel Portachiavi macOS.",
             show="*",
         )
         if key is None:
@@ -3826,11 +3939,11 @@ class App(ttk.Frame):
             )
             return
         try:
-            save_api_key(key.strip())
+            save_provider_api_key(key.strip(), provider)
         except RuntimeError as exc:
             messagebox.showerror("Chiave non salvata", str(exc))
             return
-        self.status_var.set("Chiave salvata nel Portachiavi macOS.")
+        self.status_var.set(f"Chiave {provider} salvata nel Portachiavi macOS.")
 
     def cancel(self) -> None:
         download = self._active_download()
@@ -3862,9 +3975,6 @@ class App(ttk.Frame):
     def resume(self) -> None:
         if self.worker or self.translation_worker or self.summary_worker or self._active_download():
             self.status_var.set("Il lavoro è già in corso.")
-            return
-        if self.workflow_active and self.auto_translate_pending:
-            self.status_var.set("La traduzione è già in preparazione.")
             return
         if self.current_job_path and self.current_job_path.is_file():
             self._resume_selected_job(self.current_job_path)
@@ -3944,6 +4054,11 @@ class App(ttk.Frame):
                     summary_manifest = json.loads(summary_manifest_path.read_text(encoding="utf-8"))
                     self._show_summary_completion(SummaryWorker._completion(summary_manifest))
             self.video_var.set(str(manifest.get("video", "")))
+            saved_source = str(manifest.get("source_language", "auto"))
+            if hasattr(self, "source_language_var"):
+                self.source_language_var.set(saved_source)
+            if hasattr(self, "source_language"):
+                self.source_language.set(language_label(saved_source))
             target = str(manifest.get("target_language", "original"))
             self.translation_target_var.set(target)
             self.target_language.set(language_label(target))
@@ -3987,9 +4102,10 @@ class App(ttk.Frame):
                                 f"{revision_manifest.get('output', self.final_output_path)}"
                             )
                             return
-                        api_key = load_api_key()
+                        provider = str(revision_manifest.get("provider", PROVIDER_OPENAI))
+                        api_key = load_provider_api_key(provider)
                         if not api_key:
-                            raise ValueError("Manca la configurazione della chiave API.")
+                            raise ValueError(f"Manca la chiave API {provider}.")
                         self._resume_revision_job(
                             revision_path.parent, revision_manifest, api_key
                         )
@@ -3998,14 +4114,17 @@ class App(ttk.Frame):
                 source = str(manifest.get("source_language", "auto"))
                 if source == "auto":
                     source = str(detected[0]) if len(detected) == 1 else ""
-                self._prepare_translation({
+                translation_result = {
                     "output": str(transcript),
                     "target_language": target,
                     "effective_language": source,
                     "target_model": manifest.get("target_model"),
                     "translation_context": manifest.get("translation_context", ""),
                     "final_output": str(self.final_output_path),
-                })
+                }
+                if manifest.get("translation_provider", PROVIDER_OPENAI) != PROVIDER_OPENAI:
+                    translation_result["translation_provider"] = manifest["translation_provider"]
+                self._prepare_translation(translation_result)
                 return
             api_key = load_api_key()
             if not api_key:
@@ -4031,6 +4150,7 @@ class App(ttk.Frame):
                 str(manifest.get("target_model", MODEL_SOL)),
                 str(manifest.get("translation_context", "")),
                 str(manifest.get("final_output", manifest["output"])),
+                translation_provider=str(manifest.get("translation_provider", PROVIDER_OPENAI)),
             )
             self.worker.job_dir = job_dir
             self.worker.resume(job_dir)
@@ -4063,8 +4183,20 @@ class App(ttk.Frame):
         self.translation_target_var.set(str(manifest.get("target_language", "it")))
         self.translation_source_var.set(str(manifest.get("source_language", "")))
         self.translation_model_var.set(str(manifest.get("model", MODEL_SOL)))
+        self.translation_provider_var.set(
+            str(manifest.get("provider", PROVIDER_OPENAI))
+        )
+        self._provider_changed()
         self.translation_model_combo.set(self.translation_model_var.get())
         self.translation_context_var.set(str(manifest.get("user_context", "")))
+        provider = str(manifest.get("provider", PROVIDER_OPENAI))
+        api_key = load_provider_api_key(provider)
+        if not api_key:
+            messagebox.showerror(
+                "Chiave API mancante",
+                f"Configura la chiave API per {provider} nelle Impostazioni.",
+            )
+            return
         self.translation_worker = RevisionWorker(
             str(manifest["source"]), str(manifest["output"]), api_key,
             mode=str(manifest.get("revision_mode", REVISION_MODE_LINGUISTIC)),
@@ -4074,6 +4206,7 @@ class App(ttk.Frame):
             model=str(manifest.get("model", MODEL_SOL)),
             user_context=str(manifest.get("user_context", "")),
             parent_job=manifest.get("parent_job"),
+            provider=provider,
         )
         self.translation_worker.resume(job_dir)
         self.activity_started_at = time.monotonic()
@@ -4151,7 +4284,10 @@ class App(ttk.Frame):
                                     f"Trascrizione salvata; preparazione traduzione non riuscita: {exc}"
                                 )
                                 self.workflow_active = False
+                                self._set_workflow_controls(True)
                         else:
+                            self.ready_to_translate = False
+                            self.workflow_active = False
                             self.status_var.set(
                                 f"Completato: {result['output']}"
                             )
@@ -4169,6 +4305,8 @@ class App(ttk.Frame):
                         self._finish_worker()
                     elif kind == "error":
                         self.job_resumable = bool(self.current_job_path)
+                        self.workflow_active = False
+                        self.ready_to_translate = False
                         self.status_var.set(
                             "Trascrizione non completata. I blocchi già elaborati sono "
                             "conservati. Puoi riprendere; apri i dettagli per la causa."
@@ -4237,6 +4375,18 @@ class App(ttk.Frame):
                             f"{len(value.get('content_warnings', []))} avvisi sul contenuto."
                         )
                         self._finish_translation()
+                        if self.transcription_job_path and self.transcription_job_path.is_dir():
+                            try:
+                                manifest = load_job(self.transcription_job_path)
+                                manifest["workflow_stage"] = "completed"
+                                manifest["final_output"] = str(Path(value["output"]).resolve())
+                                cost = value.get("cost") or {}
+                                manifest["translation_cost_usd"] = (
+                                    cost.get("cost_usd") if isinstance(cost, dict) else None
+                                )
+                                save_job(self.transcription_job_path, manifest)
+                            except (OSError, ValueError, KeyError):
+                                pass
                         if self.summary_requested:
                             self._prepare_summary_for_srt(
                                 value["output"], self.translation_target_var.get(),

@@ -52,6 +52,12 @@ class JobTests(unittest.TestCase):
             self.assertEqual(manifest["end_at_seconds"], 3000)
             self.assertEqual(manifest["chunks"][0]["start"], 2400)
             self.assertEqual(load_job(job_dir)["start_at_seconds"], 2400)
+            self.assertEqual(manifest["workflow_stage"], "ready_to_transcribe")
+            self.assertEqual(
+                manifest["transcription_output"],
+                str((root / "subtitles.srt").resolve()),
+            )
+            self.assertIsNone(manifest["transcription_cost_usd"])
 
     def test_old_job_defaults_to_start_zero_without_changing_chunks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

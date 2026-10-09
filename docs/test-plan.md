@@ -1,4 +1,14 @@
-# Test plan — SRT Compass 0.13.0
+# Test plan — SRT Compass 0.14.1
+
+Provider coverage includes simulated OpenAI and DeepSeek structured responses,
+separate usage and pricing, missing-key errors, interruption, resume and legacy
+jobs without a provider field. Tests assert that DeepSeek selection does not
+change Whisper transcription or the OpenAI-only TXT web brief.
+
+The two-step workflow is covered separately: transcription creates an
+original-language SRT and stops; the translation estimate is local and no text
+request is sent until the user starts translation. Resume tests cover both a
+transcription in progress and a translation job with already completed groups.
 
 ## Automated checks
 

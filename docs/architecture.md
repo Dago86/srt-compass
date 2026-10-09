@@ -1,4 +1,13 @@
-# Architecture — SRT Compass 0.13.0
+# Architecture — SRT Compass 0.14.1
+
+## Text providers
+
+Subtitle translation and contextual revision use a provider adapter boundary. The
+OpenAI adapter remains the default; the DeepSeek adapter targets its Responses
+endpoint and returns the same structured subtitle contract, usage shape and
+validation inputs. Provider, model, pricing and reasoning parameters are saved
+in each revision manifest so resume never silently changes service. Whisper
+transcription and the TXT web brief remain OpenAI-only.
 
 SRT Compass is a Python 3.11+ macOS application built with Tkinter. Long-running
 media, network and file operations execute outside the Tk event loop and report
@@ -16,6 +25,13 @@ events through queues. Only the main thread updates widgets.
   completed media with ffprobe.
 - `readability.py` locally splits long cues without an API request.
 
+The main video flow is an explicit state machine: `ready_to_transcribe`,
+`transcribing`, `transcription_completed`, `ready_to_translate`,
+`translating` and `completed`. `SubtitleWorker` owns only audio transcription
+and writes the original SRT before `RevisionWorker` is constructed. The latter
+is created only by the **Start translation** action (or its resume action).
+Translation estimates run locally and never start a request.
+
 Language codes (`auto`, `original`, `en`, `it`, `ja`, `fr`) are stable values in
 jobs and model requests. Their visible labels come from the active catalog.
 
@@ -32,7 +48,7 @@ not replace manifest state.
 
 ## Packaging
 
-`build-mac-app.sh` creates `SRT Compass.app` and `SRT Compass 0.13.0.dmg` while
+`build-mac-app.sh` creates `SRT Compass.app` and `SRT Compass 0.14.1.dmg` while
 retaining the existing bundle identifier for upgrade compatibility. yt-dlp and
 Deno are fetched from pinned upstream versions and checksum-verified. FFmpeg and
 ffprobe remain external prerequisites.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "srt-compass"
-version = "0.13.0"
+version = "0.14.1"
 description = "A macOS app for transcribing, translating and improving SRT subtitles."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 API_ROOT = "https://api.openai.com/v1"
+DEEPSEEK_API_ROOT = "https://api.deepseek.com"
 
 
 class RemoteAPIError(RuntimeError):
@@ -33,14 +34,22 @@ def _request(request: Request, timeout: float = 300) -> dict[str, Any]:
 
 
 def post_json(api_key: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return post_provider_json(api_key, path, payload, "openai")
+
+
+def post_provider_json(
+    api_key: str, path: str, payload: dict[str, Any], provider: str = "openai"
+) -> dict[str, Any]:
+    """Invia una richiesta Responses mantenendo uguale il contratto interno."""
+    root = DEEPSEEK_API_ROOT if provider == "deepseek" else API_ROOT
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
-        API_ROOT + path,
+        root + path,
         data=body,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "srt-compass/0.13.0",
+            "User-Agent": "srt-compass/0.14.1",
         },
         method="POST",
     )
@@ -94,7 +103,7 @@ def post_transcription(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "srt-compass/0.13.0",
+            "User-Agent": "srt-compass/0.14.1",
         },
         method="POST",
     )

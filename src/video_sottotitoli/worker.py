@@ -31,6 +31,7 @@ class SubtitleWorker(threading.Thread):
         translation_context: str = "",
         final_output: str | None = None,
         create_summary: bool = False,
+        translation_provider: str = "openai",
     ):
         super().__init__(daemon=True)
         self.video = video
@@ -46,6 +47,7 @@ class SubtitleWorker(threading.Thread):
         self.translation_context = translation_context
         self.final_output = final_output or output
         self.create_summary = bool(create_summary)
+        self.translation_provider = translation_provider or "openai"
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.cancelled = threading.Event()
         self.job_dir: Path | None = None
@@ -66,20 +68,16 @@ class SubtitleWorker(threading.Thread):
                 self._event("job_dir", str(self.job_dir))
                 self._process()
             else:
-                self.job_dir, manifest = create_job(
-                    self.video,
-                    self.duration,
-                    self.stream_index,
-                    self.output,
-                    self.start_at_seconds,
-                    self.end_at_seconds,
-                    self.source_language,
-                    self.target_language,
-                    self.target_model,
-                    self.translation_context,
-                    self.final_output,
-                    **({"create_summary": True} if self.create_summary else {}),
+                job_args = (
+                    self.video, self.duration, self.stream_index, self.output,
+                    self.start_at_seconds, self.end_at_seconds,
+                    self.source_language, self.target_language, self.target_model,
+                    self.translation_context, self.final_output,
                 )
+                job_kwargs = {"create_summary": True} if self.create_summary else {}
+                if self.translation_provider != "openai":
+                    job_kwargs["translation_provider"] = self.translation_provider
+                self.job_dir, manifest = create_job(*job_args, **job_kwargs)
                 self._event("job_dir", str(self.job_dir))
                 self._process(manifest)
         except Exception as exc:  # noqa: BLE001 - il thread comunica ogni errore alla UI
@@ -101,9 +99,24 @@ class SubtitleWorker(threading.Thread):
             else "Avvio il lavoro di trascrizione."
         )
         if manifest["status"] == "completed":
-            self._event("complete", manifest["output"])
+            self._event(
+                "complete",
+                {
+                    "output": manifest["output"],
+                    "source_language": manifest.get("source_language", "auto"),
+                    "target_language": manifest.get("target_language", "original"),
+                    "effective_language": (manifest.get("detected_languages") or [None])[0],
+                    "target_model": manifest.get("target_model", "gpt-6-sol"),
+                    "translation_provider": manifest.get("translation_provider", "openai"),
+                    "translation_context": manifest.get("translation_context", ""),
+                    "create_summary": bool(manifest.get("create_summary", False)),
+                    "final_output": manifest.get("final_output", manifest["output"]),
+                    "job_dir": str(self.job_dir),
+                },
+            )
             return
         manifest["status"] = "transcribing"
+        manifest["workflow_stage"] = "transcribing"
         save_job(self.job_dir, manifest)
         chunks = manifest["chunks"]
         total = len(chunks)
@@ -206,6 +219,14 @@ class SubtitleWorker(threading.Thread):
         temporary.write_text(srt_text, encoding="utf-8")
         temporary.replace(output)
         manifest["status"] = "completed"
+        manifest["workflow_stage"] = (
+            "completed"
+            if target_language == "original" or target_language == effective_language
+            else "transcription_completed"
+        )
+        manifest["transcription_output"] = str(output.resolve())
+        estimate = manifest.get("transcription_estimate_usd")
+        manifest["transcription_cost_usd"] = estimate
         manifest["detected_languages"] = sorted(detected_languages)
         save_job(self.job_dir, manifest)
         self._event(
@@ -217,9 +238,13 @@ class SubtitleWorker(threading.Thread):
                 "detected_languages": sorted(detected_languages),
                 "target_language": manifest.get("target_language", "original"),
                 "target_model": manifest.get("target_model", "gpt-6-sol"),
+                "translation_provider": manifest.get("translation_provider", "openai"),
                 "translation_context": manifest.get("translation_context", ""),
                 "create_summary": bool(manifest.get("create_summary", False)),
                 "final_output": manifest.get("final_output", manifest["output"]),
+                "workflow_stage": manifest.get("workflow_stage"),
+                "transcription_output": manifest.get("transcription_output", str(output)),
+                "transcription_cost_usd": manifest.get("transcription_cost_usd"),
                 "job_dir": str(self.job_dir),
             },
         )

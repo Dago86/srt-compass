@@ -2,6 +2,20 @@
 
 The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.14.1] - 2026-10-09
+
+- Separated transcription and translation into two explicit user actions.
+- Saved the original transcript before any optional text-provider request.
+- Saved resumable workflow phases and separate transcription/translation costs.
+- Removed automatic translation after the local estimate is calculated.
+
+## [0.14.0] - 2026-10-09
+
+- Added DeepSeek as an optional provider for subtitle translation and contextual revision.
+- Added provider-aware model selection, estimates, usage recording and job resume.
+- Kept OpenAI as the default provider for subtitles, transcription and TXT web briefs.
+- Added separate OpenAI and DeepSeek Keychain entries.
+
 ## [0.13.0] - 2026-10-08
 
 - Renamed the project and macOS application to SRT Compass.

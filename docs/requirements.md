@@ -1,11 +1,17 @@
-# Requirements — SRT Compass 0.13.0
+# Requirements — SRT Compass 0.14.1
+
+Subtitle translation and contextual revision may use OpenAI or DeepSeek. OpenAI
+remains the default and is required for audio transcription and the optional TXT
+web brief. Provider keys are stored separately in macOS Keychain; no provider
+fallback or automatic retry on another provider is performed.
 
 ## Runtime
 
 - Apple Silicon Mac running macOS.
 - Python 3.11–3.13 when running from source.
 - FFmpeg and ffprobe available in `PATH`.
-- Network access and a user-provided OpenAI API key for paid operations.
+- Network access and a user-provided OpenAI API key for transcription and TXT
+  briefs; a DeepSeek key is optional for DeepSeek subtitle operations.
 - Network access for public-link downloads.
 
 The app supports English and Italian interface languages. It detects the first
@@ -17,6 +23,13 @@ language must never change a transcription or translation language code.
 Install the `dev` optional dependency group for Ruff, tests and dependency
 checks. Automated tests use simulated services and must not perform paid API
 requests or real media downloads.
+
+The video workflow has two explicit paid steps. **Generate transcription** sends
+audio to OpenAI and always saves the original-language SRT first. When a
+different final language is selected, the app then shows a local translation
+estimate and waits for the user to press **Start translation**. No text-provider
+request is made merely because transcription finished or because the estimate
+was calculated.
 
 ## Packaging
 

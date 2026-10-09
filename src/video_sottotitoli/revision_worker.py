@@ -8,8 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .api_client import post_json
-from .config import REASONING_MODELS, REVISION_JOBS_DIR
+from .api_client import post_provider_json
+from .config import (
+    PROVIDER_OPENAI,
+    REASONING_MODELS,
+    REVISION_JOBS_DIR,
+)
 from .event_log import EventLog
 from .jobs import atomic_json
 from .readability import readability_warnings, segment_captions
@@ -52,6 +56,7 @@ class RevisionWorker(threading.Thread):
         model: str | None = None,
         user_context: str = "",
         parent_job: str | None = None,
+        provider: str = PROVIDER_OPENAI,
     ):
         super().__init__(daemon=True)
         self.source = source
@@ -64,6 +69,7 @@ class RevisionWorker(threading.Thread):
         self.target_language = target_language
         self.user_context = user_context
         self.parent_job = parent_job
+        self.provider = provider or PROVIDER_OPENAI
         self.instruction_version = INSTRUCTION_VERSION
         self.request_fn = request_fn or self._request_openai
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -131,6 +137,7 @@ class RevisionWorker(threading.Thread):
             "fingerprint": source_fingerprint(self.source),
             "output": str(Path(self.output).resolve()),
             "model": self.model,
+            "provider": self.provider,
             "pricing": {
                 "input_per_million": input_rate,
                 "output_per_million": output_rate,
@@ -191,6 +198,7 @@ class RevisionWorker(threading.Thread):
             )
 
         self.model = str(manifest["model"])
+        self.provider = str(manifest.get("provider", PROVIDER_OPENAI))
         self.mode = normalize_revision_mode(str(manifest["revision_mode"]))
         self.operation = str(manifest.get("operation", OPERATION_REVISION))
         self.source_language = str(manifest.get("source_language", "en"))
@@ -669,6 +677,7 @@ class RevisionWorker(threading.Thread):
         manifest.setdefault("source_language", "en")
         manifest.setdefault("target_language", manifest["source_language"])
         manifest.setdefault("user_context", "")
+        manifest.setdefault("provider", PROVIDER_OPENAI)
 
     def _validated_group_items(
         self,
@@ -838,8 +847,10 @@ class RevisionWorker(threading.Thread):
                     "schema": response_schema(),
                 }
             },
-            "store": False,
         }
+        # DeepSeek Responses currently does not accept OpenAI's `store` field.
+        if self.provider == PROVIDER_OPENAI:
+            request["store"] = False
         if isinstance(payload.get("retry_guidance"), dict):
             guidance = payload["retry_guidance"]
             request["instructions"] += (
@@ -853,7 +864,9 @@ class RevisionWorker(threading.Thread):
             )
         if self.model in REASONING_MODELS:
             request["reasoning"] = {"effort": "none"}
-        response = post_json(self.api_key, "/responses", request)
+        response = post_provider_json(
+            self.api_key, "/responses", request, self.provider
+        )
         output_text = response.get("output_text")
         if not output_text:
             output_text = "".join(

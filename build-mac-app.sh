@@ -22,7 +22,9 @@ ACTUAL_DENO_SHA256="$(shasum -a 256 "$DENO_PATH" | awk '{print $1}')"
   exit 1
 }
 export PYINSTALLER_CONFIG_DIR="$BUILD_DIR/pyinstaller-cache"
-python3 -m PyInstaller --noconfirm --windowed --name "SRT Compass" \
+PYTHON_BIN="python3"
+[[ -x "$PROJECT_DIR/.venv/bin/python" ]] && PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
+"$PYTHON_BIN" -m PyInstaller --noconfirm --windowed --name "SRT Compass" \
   --osx-bundle-identifier "org.videosottotitoli.app" \
   --exclude-module tiktoken --exclude-module numpy --exclude-module scipy \
   --exclude-module pandas --exclude-module matplotlib --exclude-module PIL \
@@ -33,15 +35,15 @@ python3 -m PyInstaller --noconfirm --windowed --name "SRT Compass" \
   --workpath "$BUILD_DIR/work" --specpath "$BUILD_DIR/spec" \
   "$PROJECT_DIR/run.py"
 PLIST="$APP_PATH/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.13.0" "$PLIST"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.13.0" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.14.1" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.14.1" "$PLIST"
 xattr -cr "$APP_PATH"
 codesign --force --deep --sign - "$APP_PATH"
 codesign --verify --deep --strict "$APP_PATH"
 mkdir -p "$OUTPUT_DIR"
-hdiutil create -volname "SRT Compass 0.13.0" \
+hdiutil create -volname "SRT Compass 0.14.1" \
   -srcfolder "$APP_PATH" -ov -format UDZO \
-  "$BUILD_DIR/SRT Compass 0.13.0.dmg"
-cp "$BUILD_DIR/SRT Compass 0.13.0.dmg" \
-  "$OUTPUT_DIR/SRT Compass 0.13.0.dmg"
+  "$BUILD_DIR/SRT Compass 0.14.1.dmg"
+cp "$BUILD_DIR/SRT Compass 0.14.1.dmg" \
+  "$OUTPUT_DIR/SRT Compass 0.14.1.dmg"
 print "Build created in $OUTPUT_DIR"

@@ -27,7 +27,9 @@ BLOCKED_SUFFIXES = {
 ALLOWED_LARGE_SUFFIXES = {".md"}
 SECRET_PATTERNS = (
     re.compile(r"sk-" + r"(?:proj-)?[A-Za-z0-9_-]{20,}"),
-    re.compile(r"(?m)^OPENAI_API_KEY\s*=\s*[^\s#]+"),
+    # Keep whitespace matching on the same line: an empty placeholder in
+    # .env.example must not consume the next variable as its value.
+    re.compile(r"(?m)^OPENAI_API_KEY[ \t]*=[ \t]*[^\s#]+"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(r"/Users/[^/\s]+/"),
 )

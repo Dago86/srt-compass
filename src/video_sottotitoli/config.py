@@ -44,10 +44,21 @@ WHISPER_COST_PER_MINUTE_USD = 0.006
 MODEL_MINI = "gpt-4.1-mini-2025-04-14"
 MODEL_SOL = "gpt-6-sol"
 MODEL_SOL_LEGACY = "gpt-5.6-sol"
+PROVIDER_OPENAI = "openai"
+PROVIDER_DEEPSEEK = "deepseek"
+AI_PROVIDERS = (PROVIDER_OPENAI, PROVIDER_DEEPSEEK)
+DEEPSEEK_FLASH = "deepseek-flash"
+DEEPSEEK_PRO = "deepseek-v4-pro"
+PROVIDER_MODELS = {
+    PROVIDER_OPENAI: (MODEL_MINI, MODEL_SOL_LEGACY, MODEL_SOL),
+    PROVIDER_DEEPSEEK: (DEEPSEEK_FLASH, DEEPSEEK_PRO),
+}
 MODEL_PRICING = {
     MODEL_MINI: {"input": 0.40, "output": 1.60},
     MODEL_SOL: {"input": 2.00, "output": 10.00},
     MODEL_SOL_LEGACY: {"input": 4.00, "output": 20.00},
+    DEEPSEEK_FLASH: {"input": 0.14, "output": 0.28},
+    DEEPSEEK_PRO: {"input": 0.435, "output": 0.87},
 }
 REASONING_MODELS = {MODEL_SOL, MODEL_SOL_LEGACY}
 REVISION_MODEL = MODEL_MINI
@@ -61,9 +72,12 @@ def ensure_app_dirs() -> None:
     DOWNLOAD_JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_api_key() -> str | None:
+def load_provider_api_key(provider: str = PROVIDER_OPENAI) -> str | None:
     """Legge la chiave senza stamparla; l'ambiente ha la precedenza."""
-    value = os.environ.get("OPENAI_API_KEY", "").strip()
+    provider = provider if provider in AI_PROVIDERS else PROVIDER_OPENAI
+    env_name = "OPENAI_API_KEY" if provider == PROVIDER_OPENAI else "DEEPSEEK_API_KEY"
+    account = "openai-api-key" if provider == PROVIDER_OPENAI else "deepseek-api-key"
+    value = os.environ.get(env_name, "").strip()
     if value:
         return value
 
@@ -76,7 +90,7 @@ def load_api_key() -> str | None:
                 "-s",
                 "VideoSottotitoli",
                 "-a",
-                "openai-api-key",
+                account,
                 "-w",
             ],
             text=True,
@@ -91,7 +105,7 @@ def load_api_key() -> str | None:
         return None
     try:
         for line in env_file.read_text(encoding="utf-8").splitlines():
-            if line.startswith("OPENAI_API_KEY="):
+            if line.startswith(f"{env_name}="):
                 value = line.partition("=")[2].strip().strip("\"'")
                 return value or None
     except OSError:
@@ -99,11 +113,18 @@ def load_api_key() -> str | None:
     return None
 
 
-def save_api_key(api_key: str) -> None:
+def load_api_key() -> str | None:
+    """Compatibilità: la chiave storica è quella OpenAI."""
+    return load_provider_api_key(PROVIDER_OPENAI)
+
+
+def save_provider_api_key(api_key: str, provider: str = PROVIDER_OPENAI) -> None:
     """Salva la chiave nel Portachiavi macOS, senza registrarla nei log dell'app."""
     security = shutil.which("security")
     if not security:
         raise RuntimeError("Il Portachiavi macOS non è disponibile su questo computer.")
+    provider = provider if provider in AI_PROVIDERS else PROVIDER_OPENAI
+    account = "openai-api-key" if provider == PROVIDER_OPENAI else "deepseek-api-key"
     result = subprocess.run(
         [
             security,
@@ -112,7 +133,7 @@ def save_api_key(api_key: str) -> None:
             "-s",
             "VideoSottotitoli",
             "-a",
-            "openai-api-key",
+            account,
             "-w",
             api_key,
         ],
@@ -122,6 +143,11 @@ def save_api_key(api_key: str) -> None:
     )
     if result.returncode:
         raise RuntimeError("Non riesco a salvare la chiave nel Portachiavi macOS.")
+
+
+def save_api_key(api_key: str) -> None:
+    """Compatibilità: salva la chiave storica OpenAI."""
+    save_provider_api_key(api_key, PROVIDER_OPENAI)
 
 
 def estimate_cost_usd(duration_seconds: float) -> float:
