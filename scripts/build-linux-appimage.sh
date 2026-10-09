@@ -23,8 +23,10 @@ export PYINSTALLER_CONFIG_DIR="$BUILD_DIR/pyinstaller-cache"
   --workpath "$BUILD_DIR/work" --specpath "$BUILD_DIR/spec" \
   "$PROJECT_DIR/run.py"
 
-mkdir -p "$APP_DIR/usr/lib/srt-compass" "$APP_DIR/usr/share/applications" "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "$APP_DIR/usr/lib/srt-compass" "$APP_DIR/usr/share/applications" "$APP_DIR/usr/share/icons/hicolor/scalable/apps"
 cp -R "$DIST_DIR/SRT Compass/." "$APP_DIR/usr/lib/srt-compass/"
+cp "$PROJECT_DIR/packaging/srt-compass.svg" "$APP_DIR/srt-compass.svg"
+cp "$PROJECT_DIR/packaging/srt-compass.svg" "$APP_DIR/usr/share/icons/hicolor/scalable/apps/srt-compass.svg"
 cat > "$APP_DIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -38,7 +40,7 @@ Name=SRT Compass
 Comment=Transcribe, translate and improve subtitles
 Exec=srt-compass
 Icon=srt-compass
-Categories=AudioVideo;Utility;
+Categories=AudioVideo;
 Terminal=false
 EOF
 cp "$APP_DIR/usr/share/applications/srt-compass.desktop" "$APP_DIR/srt-compass.desktop"

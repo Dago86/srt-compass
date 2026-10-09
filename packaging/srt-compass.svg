@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="SRT Compass">
+  <rect width="256" height="256" rx="48" fill="#2563eb"/>
+  <circle cx="128" cy="128" r="82" fill="none" stroke="#fff" stroke-width="14"/>
+  <path d="M128 54v148M54 128h148" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".72"/>
+  <path d="m128 76 18 52-18 52-18-52z" fill="#fff"/>
+</svg>
