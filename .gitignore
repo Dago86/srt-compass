@@ -61,3 +61,10 @@ download.json
 vendor/downloads/
 vendor/macos-arm64/deno
 vendor/macos-arm64/yt-dlp_macos
+vendor/macos-arm64/yt-dlp.sha256
+vendor/macos-x86_64/deno
+vendor/macos-x86_64/yt-dlp_macos
+vendor/macos-x86_64/*.sha256
+vendor/linux-x86_64/deno
+vendor/linux-x86_64/yt-dlp_linux
+vendor/linux-x86_64/*.sha256

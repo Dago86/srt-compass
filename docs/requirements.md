@@ -1,13 +1,14 @@
-# Requirements — SRT Compass 0.14.1
+# Requirements — SRT Compass 0.15.0
 
 Subtitle translation and contextual revision may use OpenAI or DeepSeek. OpenAI
 remains the default and is required for audio transcription and the optional TXT
-web brief. Provider keys are stored separately in macOS Keychain; no provider
+web brief. Provider keys are stored separately in the macOS Keychain or Linux
+Secret Service keyring; no provider
 fallback or automatic retry on another provider is performed.
 
 ## Runtime
 
-- Apple Silicon Mac running macOS.
+- macOS Apple Silicon or Intel, or Linux x86_64 (Ubuntu 22.04 or compatible).
 - Python 3.11–3.13 when running from source.
 - FFmpeg and ffprobe available in `PATH`.
 - Network access and a user-provided OpenAI API key for transcription and TXT
@@ -15,7 +16,7 @@ fallback or automatic retry on another provider is performed.
 - Network access for public-link downloads.
 
 The app supports English and Italian interface languages. It detects the first
-macOS language on initial launch and falls back to English. Changing the UI
+system language on initial launch and falls back to English. Changing the UI
 language must never change a transcription or translation language code.
 
 ## Development
@@ -35,4 +36,6 @@ was calculated.
 
 Install the `packaging` optional dependency group. The packaging process fetches
 pinned yt-dlp and Deno binaries from official upstream sources, verifies their
-checksums and excludes downloaded executables from Git.
+checksums and excludes downloaded executables from Git. macOS builds produce
+architecture-specific DMGs; Linux builds produce an x86_64 AppImage. FFmpeg
+and ffprobe remain installed by the operating system.

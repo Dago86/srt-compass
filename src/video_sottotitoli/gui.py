@@ -14,9 +14,11 @@ from typing import Any, ClassVar
 
 from .config import (
     AI_PROVIDERS,
+    DEFAULT_DOWNLOAD_DIR,
     DOWNLOAD_JOBS_DIR,
     LANGUAGE_NAMES,
     LANGUAGES,
+    LOG_DIR,
     MODEL_MINI,
     MODEL_SOL,
     MODEL_SOL_LEGACY,
@@ -54,6 +56,7 @@ from .i18n import (
 from .jobs import fingerprint, load_job, save_job
 from .media import probe_media
 from .models import MediaInfo
+from .platform import open_path, secret_store_label
 from .recent_jobs import list_recent_jobs
 from .revision import (
     OPERATION_REVISION,
@@ -209,7 +212,7 @@ class EventLogPanel(ttk.Frame):
 
     def open_log(self) -> None:
         if self.path and Path(self.path).is_file():
-            subprocess.Popen(["open", self.path])
+            open_path(self.path)
 
 
 class HelpButton(ttk.Button):
@@ -350,7 +353,7 @@ class DownloadDialog(tk.Toplevel):
         self.quality_var = tk.StringVar(value=next(iter(self.quality_labels())))
         self.audio_language_var = tk.StringVar(value=tr("dialog.download.default_track"))
         self.destination_var = tk.StringVar(
-            value=str(Path.home() / "Downloads" / "SRT Compass")
+            value=str(DEFAULT_DOWNLOAD_DIR)
         )
         self.filename_var = tk.StringVar(value="")
         self.info_var = tk.StringVar(value=tr("dialog.download.paste"))
@@ -1177,7 +1180,7 @@ class RecentJobsDialog(tk.Toplevel):
     def open_record(self) -> None:
         record = self._selected()
         if record:
-            subprocess.Popen(["open", str(record["path"])])
+            open_path(record["path"])
 
     def cleanup_temporary(self) -> None:
         record = self._selected()
@@ -3275,15 +3278,15 @@ class App(ttk.Frame):
 
     def _open_result(self) -> None:
         if self.final_output_path and self.final_output_path.is_file():
-            subprocess.Popen(["open", str(self.final_output_path)])
+            open_path(self.final_output_path)
 
     def _show_result(self) -> None:
         if self.final_output_path and self.final_output_path.exists():
-            subprocess.Popen(["open", "-R", str(self.final_output_path)])
+            open_path(self.final_output_path, reveal=True)
 
     def _open_issues(self) -> None:
         if self.result_report_path and self.result_report_path.is_file():
-            subprocess.Popen(["open", str(self.result_report_path)])
+            open_path(self.result_report_path)
 
     def _summary_option_changed(self) -> None:
         if (not self.media or self.worker or self.translation_worker
@@ -3475,7 +3478,7 @@ class App(ttk.Frame):
 
     def _open_summary(self) -> None:
         if self.summary_output and self.summary_output.is_file():
-            subprocess.Popen(["open", str(self.summary_output)])
+            open_path(self.summary_output)
 
     def _update_translation_estimate(self, _event: object | None = None) -> None:
         if self.translation_worker:
@@ -3928,7 +3931,7 @@ class App(ttk.Frame):
     def configure_provider_key(self, provider: str) -> None:
         key = simpledialog.askstring(
             "Configura chiave API",
-            f"Incolla la chiave API {provider}. Verrà salvata nel Portachiavi macOS.",
+            f"Incolla la chiave API {provider}. Verrà salvata nel {secret_store_label(get_locale())}.",
             show="*",
         )
         if key is None:
@@ -3943,7 +3946,9 @@ class App(ttk.Frame):
         except RuntimeError as exc:
             messagebox.showerror("Chiave non salvata", str(exc))
             return
-        self.status_var.set(f"Chiave {provider} salvata nel Portachiavi macOS.")
+        self.status_var.set(
+            f"Chiave {provider} salvata nel {secret_store_label(get_locale())}."
+        )
 
     def cancel(self) -> None:
         download = self._active_download()
@@ -4576,7 +4581,7 @@ class App(ttk.Frame):
 
 
 def main() -> None:
-    log_path = Path.home() / "Library" / "Logs" / "VideoSottotitoli" / "startup.log"
+    log_path = LOG_DIR / "startup.log"
     set_locale(load_locale(PREFERENCES_PATH))
 
     def startup_log(message: str) -> None:

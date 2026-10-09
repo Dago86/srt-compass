@@ -9,9 +9,10 @@ features send data to external services only after an explicit user action.
 - Translation and revision send subtitle text and optional context to the
   provider selected for that job. OpenAI is the default; DeepSeek is optional.
 - The optional TXT brief sends SRT text and may use web search.
-- The API key is read from the environment or macOS Keychain. The
+- The API key is read from the environment or the platform secret store. The
   `.env.local` fallback is for development only.
-- OpenAI and DeepSeek keys are stored under separate Keychain accounts.
+- OpenAI and DeepSeek keys are stored under separate accounts in the macOS
+  Keychain or Linux Secret Service.
 
 ## Link downloads
 
@@ -21,7 +22,8 @@ filters likely credentials and temporary media URLs from logs.
 
 ## Local data
 
-Jobs, responses and temporary files remain under
-`~/Library/Application Support/VideoSottotitoli/` for resume support. The
+Jobs, responses and temporary files remain under the platform data directory
+for resume support. macOS keeps `~/Library/Application Support/VideoSottotitoli/`;
+Linux follows XDG data directories. The
 **Storage and temporary files** window can remove partial files from inactive
 downloads. Final files are saved only to the chosen destination.

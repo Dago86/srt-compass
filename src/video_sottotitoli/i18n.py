@@ -288,7 +288,7 @@ def normalize_locale(value: str | None) -> str:
 
 
 def detect_system_locale() -> str:
-    """Return macOS' primary UI language, with a portable fallback."""
+    """Return the desktop's primary UI language with a portable fallback."""
     if sys.platform == "darwin":
         try:
             result = subprocess.run(

@@ -20,10 +20,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from .config import DOWNLOAD_JOBS_DIR, MAX_VIDEO_SECONDS, ensure_app_dirs
+from .config import (
+    DEFAULT_DOWNLOAD_DIR,
+    DOWNLOAD_JOBS_DIR,
+    MAX_VIDEO_SECONDS,
+    ensure_app_dirs,
+)
 from .event_log import EventLog, sanitize_message
 from .jobs import atomic_json
 from .media import MediaError, probe_media
+from .platform import is_linux, is_macos
 
 
 class DownloadError(RuntimeError):
@@ -150,15 +156,28 @@ def cleanup_all_download_staging() -> dict[str, Any]:
 
 
 def bundled_binary(name: str) -> str:
+    """Locate a bundled or system executable for the current platform."""
+    if name == "yt-dlp_macos":
+        name = "yt-dlp"
+    platform_name = "macos-arm64" if is_macos() else "linux-x86_64" if is_linux() else sys.platform
+    vendor_names = [name]
+    if name == "yt-dlp":
+        vendor_names.extend(("yt-dlp_macos", "yt-dlp_linux"))
     candidates: list[Path] = []
     if getattr(sys, "frozen", False):
-        candidates.extend(
-            [
-                Path(getattr(sys, "_MEIPASS", "")) / "bin" / name,
-                Path(sys.executable).resolve().parent / "../Resources/bin" / name,
-            ]
-        )
-    candidates.append(Path(__file__).resolve().parents[2] / "vendor" / "macos-arm64" / name)
+        for binary_name in vendor_names:
+            candidates.extend(
+                [
+                    Path(getattr(sys, "_MEIPASS", "")) / "bin" / binary_name,
+                    Path(sys.executable).resolve().parent / "../Resources/bin" / binary_name,
+                ]
+            )
+    vendor_root = Path(__file__).resolve().parents[2] / "vendor"
+    for binary_name in vendor_names:
+        candidates.append(vendor_root / platform_name / binary_name)
+        if is_macos():
+            # Keep the pre-0.15.0 vendor directory readable on Apple Silicon.
+            candidates.append(vendor_root / "macos-arm64" / binary_name)
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate.resolve())
@@ -523,7 +542,7 @@ class DownloadWorker(threading.Thread):
     def _analyze(self) -> None:
         self._event("status", "Analizzo il link…")
         command = [
-            bundled_binary("yt-dlp_macos"), "--js-runtimes",
+            bundled_binary("yt-dlp"), "--js-runtimes",
             f"deno:{bundled_binary('deno')}", "--ignore-config", "--no-plugin-dirs",
             "--no-playlist", "--no-warnings", "--socket-timeout", "30",
             "--retries", "3", "--fragment-retries", "3",
@@ -603,7 +622,7 @@ class DownloadWorker(threading.Thread):
             if self.output_name is not None:
                 manifest["output_name"] = self.output_name
             manifest.setdefault("staging_dir", str((job_dir / "staging").resolve()))
-            manifest.setdefault("destination_dir", str((Path.home() / "Downloads" / "SRT Compass").resolve()))
+            manifest.setdefault("destination_dir", str(DEFAULT_DOWNLOAD_DIR.resolve()))
             manifest.setdefault(
                 "filename_template",
                 "download-%(id)s.%(ext)s" if was_analyzed
@@ -631,7 +650,7 @@ class DownloadWorker(threading.Thread):
             "duration": metadata.get("duration"),
             "quality": self.quality,
             "audio_language": self.audio_language,
-            "destination_dir": str((self.destination_dir or Path.home() / "Downloads" / "SRT Compass").resolve()),
+            "destination_dir": str((self.destination_dir or DEFAULT_DOWNLOAD_DIR).resolve()),
             "staging_dir": str((job_dir / "staging").resolve()),
             "filename_template": "download-%(id)s.%(ext)s",
             "created_at": time.time(),
@@ -655,7 +674,7 @@ class DownloadWorker(threading.Thread):
             raise DownloadError(str(exc)) from exc
         self._event("status", "Aggiorno i metadati prima del download…")
         info_command = [
-            bundled_binary("yt-dlp_macos"), "--js-runtimes",
+            bundled_binary("yt-dlp"), "--js-runtimes",
             f"deno:{bundled_binary('deno')}", "--ignore-config", "--no-plugin-dirs",
             "--no-playlist", "--no-warnings", "--socket-timeout", "30",
             "--retries", "3", "--fragment-retries", "3",
@@ -696,7 +715,7 @@ class DownloadWorker(threading.Thread):
         atomic_json(job_dir / "download.json", manifest)
 
         command = [
-            bundled_binary("yt-dlp_macos"), "--js-runtimes",
+            bundled_binary("yt-dlp"), "--js-runtimes",
             f"deno:{bundled_binary('deno')}", "--ignore-config", "--no-plugin-dirs",
             "--no-playlist", "--no-warnings", "--socket-timeout", "30",
             "--retries", "3", "--fragment-retries", "3",

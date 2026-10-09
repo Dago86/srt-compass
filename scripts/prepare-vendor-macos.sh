@@ -54,4 +54,5 @@ fi
 
 verify "$YTDLP_SHA256" "$VENDOR_DIR/yt-dlp_macos"
 verify "$DENO_BINARY_SHA256" "$VENDOR_DIR/deno"
+print "$YTDLP_SHA256" > "$VENDOR_DIR/yt-dlp.sha256"
 print "yt-dlp e Deno sono pronti e verificati."

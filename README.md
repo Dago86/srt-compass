@@ -1,16 +1,16 @@
 # SRT Compass
 
-SRT Compass is a macOS desktop application for creating, translating and
+SRT Compass is a cross-platform desktop application for creating, translating and
 improving SRT subtitles. It accepts local videos or individual public video
 links, lets you select a time range, and keeps timestamps aligned to the
 original media timeline.
 
-> **Status:** beta for Apple Silicon Macs. The first public release contains
-> source code only. The app is not signed with an Apple Developer ID and is not
-> notarized.
+> **Status:** beta for macOS Apple Silicon, macOS Intel and Linux x86_64. Release
+> artifacts are ad-hoc signed macOS DMGs and an unsigned Linux AppImage. The
+> app is not signed with an Apple Developer ID and is not notarized.
 
 The interface is available in English and Italian. On first launch it follows
-the primary macOS language, falling back to English. Change it from
+the primary system language, falling back to English. Change it from
 **Settings → Interface Language**; SRT language choices remain independent.
 
 ## Features
@@ -28,7 +28,7 @@ the primary macOS language, falling back to English. Change it from
 
 ## Requirements
 
-- macOS on Apple Silicon.
+- macOS on Apple Silicon or Intel, or Linux x86_64 (Ubuntu 22.04 or compatible).
 - Python 3.11, 3.12 or 3.13.
 - [FFmpeg](https://ffmpeg.org/) and `ffprobe` available in `PATH`.
 - An OpenAI API key with available credit for paid operations.
@@ -36,10 +36,16 @@ the primary macOS language, falling back to English. Change it from
   with DeepSeek Flash or DeepSeek Pro.
 - Internet access for OpenAI operations and link downloads.
 
-Install FFmpeg with Homebrew:
+Install FFmpeg on macOS with Homebrew:
 
 ```bash
 brew install ffmpeg
+```
+
+On Ubuntu/Debian, install the system packages instead:
+
+```bash
+sudo apt install ffmpeg python3-tk
 ```
 
 ## Install from source
@@ -57,8 +63,10 @@ srt-compass
 You can also run `python run.py` from a checkout.
 
 On first use, open **Settings → Configure API key…** and choose OpenAI or
-DeepSeek. SRT Compass stores each key in a separate macOS Keychain entry and
-never writes keys to application logs. Developers can copy `.env.example` to
+DeepSeek. SRT Compass stores each key in the macOS Keychain or a Linux Secret
+Service keyring and never writes keys to application logs. If no desktop
+keyring is available, configure the corresponding environment variable.
+Developers can copy `.env.example` to
 `.env.local`; that file is ignored by Git and must never be shared.
 
 ## Basic workflow
@@ -73,10 +81,11 @@ never writes keys to application logs. Developers can copy `.env.example` to
 6. Review the issue report if the result contains warnings or untranslated
    parts.
 
-Incomplete jobs remain under the legacy-compatible directory
-`~/Library/Application Support/VideoSottotitoli/` and are available from
-**Recent jobs**. Temporary-file cleanup does not remove published media or SRT
-results.
+Incomplete jobs remain in the platform data directory and are available from
+**Recent jobs**. macOS keeps the legacy
+`~/Library/Application Support/VideoSottotitoli/` directory; Linux uses
+`$XDG_DATA_HOME/SRT Compass` (or `~/.local/share/SRT Compass`). Temporary-file
+cleanup does not remove published media or SRT results.
 
 ## Costs, privacy and external services
 
@@ -104,7 +113,7 @@ python scripts/check_repository.py
 Tests use simulated services and must not make paid API requests or real media
 downloads. See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes.
 
-## Local macOS build
+## Local builds
 
 ```bash
 python -m pip install -e '.[packaging]'
@@ -112,14 +121,25 @@ python -m pip install -e '.[packaging]'
 ./build-mac-app.sh
 ```
 
-The preparation script downloads pinned yt-dlp and Deno releases from their
-official upstream sources and verifies their checksums. Downloaded binaries and
-the generated DMG are ignored by Git. The build uses an ad-hoc local signature
-and is not intended as a notarized public binary.
+On Linux x86_64, install `appimagetool` and run:
+
+```bash
+./scripts/prepare-vendor-linux.sh
+./scripts/build-linux-appimage.sh
+```
+
+The macOS build selects Apple Silicon or Intel from the host architecture and
+creates a separate DMG. The Linux build creates an x86_64 AppImage. Preparation
+scripts download pinned yt-dlp and Deno releases from their official upstream
+sources and verify checksums.
+
+Downloaded binaries and generated packages are ignored by Git. macOS builds use
+an ad-hoc local signature and are not notarized public binaries.
 
 ## Beta limitations
 
-- Packaging and interface testing currently focus on Apple Silicon Macs.
+- Linux support targets x86_64 desktop systems; ARM Linux is not included yet.
+- FFmpeg and ffprobe are external prerequisites on every platform.
 - Timing created when splitting very long cues is estimated from text and is not
   realigned against the audio.
 - Contextual translation still requires human review for names, numbers and

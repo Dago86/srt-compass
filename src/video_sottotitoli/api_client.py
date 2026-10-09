@@ -49,7 +49,7 @@ def post_provider_json(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "srt-compass/0.14.1",
+            "User-Agent": "srt-compass/0.15.0",
         },
         method="POST",
     )
@@ -103,7 +103,7 @@ def post_transcription(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "srt-compass/0.14.1",
+            "User-Agent": "srt-compass/0.15.0",
         },
         method="POST",
     )

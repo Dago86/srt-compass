@@ -1,4 +1,4 @@
-# Test plan — SRT Compass 0.14.1
+# Test plan — SRT Compass 0.15.0
 
 Provider coverage includes simulated OpenAI and DeepSeek structured responses,
 separate usage and pricing, missing-key errors, interruption, resume and legacy
@@ -15,13 +15,18 @@ transcription in progress and a translation job with already completed groups.
 - Run the complete unittest suite on Python 3.11, 3.12 and 3.13.
 - Run Ruff, module compilation, repository policy checks and dependency audit.
 - Verify that English and Italian catalogs contain identical message IDs.
-- Test macOS Italian, English and unsupported-language detection.
+- Test macOS and Linux Italian, English and unsupported-language detection.
+- Test XDG data, config and state directories on Linux and legacy storage on macOS.
+- Test Linux Secret Service key lookup/save and the environment-variable fallback.
+- Test platform file opening through `xdg-open` and macOS `open` adapters.
 - Test atomic preference persistence and invalid preference fallback.
 - Verify that changing UI locale does not change stored source or target codes.
 - Resume legacy transcription, revision and download jobs without migrating
   their manifests, storage directory or Keychain service.
 - Exercise download, transcription, translation and SRT tools with simulated
   workers in both interface languages.
+- Run the Linux x86_64 AppImage smoke test and the two architecture-specific
+  macOS build checks; verify the bundled yt-dlp and Deno checksums.
 
 ## Visual checks
 

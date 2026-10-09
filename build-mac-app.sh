@@ -4,13 +4,25 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/srt-compass-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 DIST_DIR="$BUILD_DIR/dist"
+VERSION="${VERSION:-0.15.0}"
 APP_PATH="$DIST_DIR/SRT Compass.app"
 OUTPUT_DIR="$PROJECT_DIR/dist"
-YTDLP_PATH="$PROJECT_DIR/vendor/macos-arm64/yt-dlp_macos"
-DENO_PATH="$PROJECT_DIR/vendor/macos-arm64/deno"
-"$PROJECT_DIR/scripts/prepare-vendor-macos.sh"
-EXPECTED_YTDLP_SHA256="0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202"
-EXPECTED_DENO_SHA256="$(cat "$PROJECT_DIR/vendor/macos-arm64/deno.sha256")"
+MAC_ARCH="${MAC_ARCH:-$(uname -m)}"
+case "$MAC_ARCH" in
+  arm64|aarch64) VENDOR_ARCH="macos-arm64" ;;
+  x86_64|amd64) VENDOR_ARCH="macos-x86_64" ;;
+  *) print -u2 "Architettura macOS non supportata: $MAC_ARCH"; exit 1 ;;
+esac
+VENDOR_DIR="$PROJECT_DIR/vendor/$VENDOR_ARCH"
+YTDLP_PATH="$VENDOR_DIR/yt-dlp_macos"
+DENO_PATH="$VENDOR_DIR/deno"
+if [[ "$VENDOR_ARCH" == "macos-arm64" ]]; then
+  "$PROJECT_DIR/scripts/prepare-vendor-macos.sh"
+else
+  "$PROJECT_DIR/scripts/prepare-vendor-macos-intel.sh"
+fi
+EXPECTED_YTDLP_SHA256="$(cat "$VENDOR_DIR/yt-dlp.sha256")"
+EXPECTED_DENO_SHA256="$(cat "$VENDOR_DIR/deno.sha256")"
 ACTUAL_YTDLP_SHA256="$(shasum -a 256 "$YTDLP_PATH" | awk '{print $1}')"
 ACTUAL_DENO_SHA256="$(shasum -a 256 "$DENO_PATH" | awk '{print $1}')"
 [[ "$ACTUAL_YTDLP_SHA256" == "$EXPECTED_YTDLP_SHA256" ]] || {
@@ -35,15 +47,15 @@ PYTHON_BIN="python3"
   --workpath "$BUILD_DIR/work" --specpath "$BUILD_DIR/spec" \
   "$PROJECT_DIR/run.py"
 PLIST="$APP_PATH/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.14.1" "$PLIST"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 0.14.1" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$PLIST"
 xattr -cr "$APP_PATH"
 codesign --force --deep --sign - "$APP_PATH"
 codesign --verify --deep --strict "$APP_PATH"
 mkdir -p "$OUTPUT_DIR"
-hdiutil create -volname "SRT Compass 0.14.1" \
+hdiutil create -volname "SRT Compass $VERSION" \
   -srcfolder "$APP_PATH" -ov -format UDZO \
-  "$BUILD_DIR/SRT Compass 0.14.1.dmg"
-cp "$BUILD_DIR/SRT Compass 0.14.1.dmg" \
-  "$OUTPUT_DIR/SRT Compass 0.14.1.dmg"
+  "$BUILD_DIR/SRT Compass $VERSION $VENDOR_ARCH.dmg"
+cp "$BUILD_DIR/SRT Compass $VERSION $VENDOR_ARCH.dmg" \
+  "$OUTPUT_DIR/SRT Compass $VERSION $VENDOR_ARCH.dmg"
 print "Build created in $OUTPUT_DIR"

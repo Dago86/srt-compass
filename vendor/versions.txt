@@ -1,11 +1,11 @@
 yt-dlp 2026.08.19
-  asset: yt-dlp_macos (official universal macOS executable)
+  assets: yt-dlp_macos (macOS executable), yt-dlp_linux (Linux x86_64 executable)
   SHA-256: 0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202
   download: https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos
   upstream checksum: https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/SHA2-256SUMS
 
 Deno 2.9.7
-  asset: deno-aarch64-apple-darwin.zip (official Apple Silicon runtime)
+  assets: deno-aarch64-apple-darwin.zip (Apple Silicon), deno-x86_64-apple-darwin.zip (Intel), deno-x86_64-unknown-linux-gnu.zip (Linux x86_64)
   archive SHA-256: 5cd46d6268f6f78f5d88bdc7159d20bd44cdaa4b3303474839f87ec6fe7ae25c
   extracted executable SHA-256: b73737579d5a84c160e3316487594783fa5c15f4e13252a6a07050b755317f1a
   download: https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-apple-darwin.zip

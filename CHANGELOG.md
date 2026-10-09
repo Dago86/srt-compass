@@ -2,6 +2,14 @@
 
 The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.15.0] - 2026-10-09
+
+- Added macOS Intel support alongside Apple Silicon.
+- Added Linux x86_64 support with an AppImage build.
+- Made application data, system-language detection and file opening portable.
+- Added native Linux Secret Service keyring integration with environment-variable fallback.
+- Added architecture-specific vendor preparation and packaging scripts.
+
 ## [0.14.1] - 2026-10-09
 
 - Separated transcription and translation into two explicit user actions.

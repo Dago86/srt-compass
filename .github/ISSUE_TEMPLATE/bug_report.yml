@@ -10,14 +10,14 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: 0.13.0
+      placeholder: 0.15.0
     validations:
       required: true
   - type: input
-    id: macos
+    id: platform
     attributes:
-      label: macOS version and Mac
-      placeholder: macOS 15, Apple Silicon
+      label: Operating system and architecture
+      placeholder: Ubuntu 22.04, x86_64 or macOS 15, Apple Silicon
     validations:
       required: true
   - type: textarea

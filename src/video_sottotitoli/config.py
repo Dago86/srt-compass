@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .platform import config_dir, data_dir, default_download_dir, state_dir
+
 # Stable language codes. Display labels belong to the localization layer.
 TARGET_LANGUAGE_CODES = ("en", "it", "ja")
 SOURCE_LANGUAGE_CODES = ("auto", "en", "it", "ja", "fr")
@@ -33,11 +35,13 @@ PROJECT_ROOT = (
     if getattr(sys, "frozen", False)
     else Path(__file__).resolve().parents[2]
 )
-APP_SUPPORT = Path.home() / "Library" / "Application Support" / "VideoSottotitoli"
-PREFERENCES_PATH = APP_SUPPORT / "preferences.json"
+APP_SUPPORT = data_dir()
+PREFERENCES_PATH = config_dir() / "preferences.json"
 JOBS_DIR = APP_SUPPORT / "jobs"
 REVISION_JOBS_DIR = APP_SUPPORT / "revision-jobs"
 DOWNLOAD_JOBS_DIR = APP_SUPPORT / "download-jobs"
+DEFAULT_DOWNLOAD_DIR = default_download_dir()
+LOG_DIR = state_dir()
 MAX_VIDEO_SECONDS = 5 * 60 * 60
 CHUNK_SECONDS = 10 * 60
 WHISPER_COST_PER_MINUTE_USD = 0.006
@@ -81,8 +85,7 @@ def load_provider_api_key(provider: str = PROVIDER_OPENAI) -> str | None:
     if value:
         return value
 
-    security = shutil.which("security")
-    if security:
+    if sys.platform == "darwin" and (security := shutil.which("security")):
         result = subprocess.run(
             [
                 security,
@@ -99,6 +102,29 @@ def load_provider_api_key(provider: str = PROVIDER_OPENAI) -> str | None:
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
+
+    if sys.platform.startswith("linux"):
+        secret_tool = shutil.which("secret-tool")
+        if secret_tool:
+            try:
+                result = subprocess.run(
+                    [
+                        secret_tool,
+                        "lookup",
+                        "service",
+                        "VideoSottotitoli",
+                        "account",
+                        account,
+                    ],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=5,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
     env_file = PROJECT_ROOT / ".env.local"
     if not env_file.is_file():
@@ -119,30 +145,59 @@ def load_api_key() -> str | None:
 
 
 def save_provider_api_key(api_key: str, provider: str = PROVIDER_OPENAI) -> None:
-    """Salva la chiave nel Portachiavi macOS, senza registrarla nei log dell'app."""
-    security = shutil.which("security")
-    if not security:
-        raise RuntimeError("Il Portachiavi macOS non è disponibile su questo computer.")
+    """Save a provider key in the native desktop secret store."""
     provider = provider if provider in AI_PROVIDERS else PROVIDER_OPENAI
     account = "openai-api-key" if provider == PROVIDER_OPENAI else "deepseek-api-key"
-    result = subprocess.run(
-        [
-            security,
-            "add-generic-password",
-            "-U",
-            "-s",
-            "VideoSottotitoli",
-            "-a",
-            account,
-            "-w",
-            api_key,
-        ],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    if sys.platform == "darwin" and (security := shutil.which("security")):
+        result = subprocess.run(
+            [
+                security,
+                "add-generic-password",
+                "-U",
+                "-s",
+                "VideoSottotitoli",
+                "-a",
+                account,
+                "-w",
+                api_key,
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    elif sys.platform.startswith("linux") and (secret_tool := shutil.which("secret-tool")):
+        try:
+            result = subprocess.run(
+                [
+                    secret_tool,
+                    "store",
+                    "--label",
+                    "SRT Compass API key",
+                    "service",
+                    "VideoSottotitoli",
+                    "account",
+                    account,
+                ],
+                input=api_key + "\n",
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("Non riesco a contattare il portachiavi di sistema.") from exc
+    else:
+        raise RuntimeError(
+            "Il portachiavi di sistema non è disponibile. "
+            "Installa Secret Service (secret-tool) oppure usa la variabile "
+            f"{env_name_for_provider(provider)}."
+        )
     if result.returncode:
-        raise RuntimeError("Non riesco a salvare la chiave nel Portachiavi macOS.")
+        raise RuntimeError("Non riesco a salvare la chiave nel portachiavi di sistema.")
+
+
+def env_name_for_provider(provider: str) -> str:
+    return "OPENAI_API_KEY" if provider == PROVIDER_OPENAI else "DEEPSEEK_API_KEY"
 
 
 def save_api_key(api_key: str) -> None:
