@@ -2,7 +2,8 @@
 
 This roadmap describes direction, not a delivery commitment.
 
-- Show costs primarily in euros while retaining USD details.
+- Keep the reviewed model catalog, pricing sources and subtitle-quality
+  assessments current as providers release or retire models.
 - Expose only the final SRT in the destination and keep resumable source
   transcripts inside application storage.
 - Improve switching to a new video while a download is active or interrupted.

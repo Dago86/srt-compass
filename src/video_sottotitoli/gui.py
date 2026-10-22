@@ -54,7 +54,24 @@ from .i18n import (
     tr,
 )
 from .jobs import fingerprint, load_job, save_job
-from .media import probe_media
+from .media import (
+    AUDIO_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    extension_pattern,
+    probe_media,
+)
+from .model_catalog import (
+    catalog_from_disk,
+    discover_models,
+    executable_model_ids,
+    format_currency,
+    load_exchange_rate,
+    quality_label,
+    refresh_catalog_if_due,
+    refresh_exchange_if_due,
+    verified_models,
+)
 from .models import MediaInfo
 from .platform import open_path, secret_store_label
 from .recent_jobs import list_recent_jobs
@@ -69,7 +86,11 @@ from .revision import (
     load_captions,
     suggest_source_language,
 )
-from .revision_worker import RevisionWorker, load_revision_for_resume
+from .revision_worker import (
+    RevisionWorker,
+    load_revision_for_resume,
+    revision_needs_resume,
+)
 from .selection import (
     StartTimeError,
     format_time_value,
@@ -78,6 +99,16 @@ from .selection import (
 from .srt import format_srt_file, format_srt_text
 from .video_summary import SummaryWorker, estimate_summary, summary_output_path
 from .worker import SubtitleWorker
+
+
+def local_media_filetypes() -> list[tuple[str, str]]:
+    """File filters shared by the local transcription source picker."""
+    return [
+        (tr("filetype.media"), extension_pattern(tuple(sorted(SUPPORTED_EXTENSIONS)))),
+        (tr("filetype.video"), extension_pattern(VIDEO_EXTENSIONS)),
+        (tr("filetype.audio"), extension_pattern(AUDIO_EXTENSIONS)),
+        (tr("filetype.all"), "*"),
+    ]
 
 
 class EventLogPanel(ttk.Frame):
@@ -923,7 +954,6 @@ class DownloadDialog(tk.Toplevel):
                 )
             # Defend the GUI boundary too: never pass a staging path to transcription.
             media = replace(value["media"], path=str(published))
-            self.app.video_var.set(str(published))
             self.app._receive_media(media)
             self.app.log_panel.set_log(str(Path(value["job_dir"]) / "events.log"))
             if worker and worker.event_log:
@@ -1364,6 +1394,8 @@ class RevisionDialog(tk.Toplevel):
         self.target_language_var = tk.StringVar(value=target_language)
         self.model_var = tk.StringVar(value=default_model(self.mode_var.get(), operation))
         self.provider_var = tk.StringVar(value=PROVIDER_OPENAI)
+        self.model_catalog, _catalog_cached = catalog_from_disk()
+        self.exchange_rate = load_exchange_rate()
         self.context_var = tk.StringVar()
         self.mode_help_var = tk.StringVar()
         self.estimate_var = tk.StringVar()
@@ -1433,7 +1465,7 @@ class RevisionDialog(tk.Toplevel):
         self.provider_combo.bind("<<ComboboxSelected>>", self._provider_changed)
         self.model_combo = ttk.Combobox(
             settings, width=25, state="readonly", textvariable=self.model_var,
-            values=list(PROVIDER_MODELS[PROVIDER_OPENAI]),
+            values=list(executable_model_ids(self.model_catalog, PROVIDER_OPENAI)),
         )
         self.model_combo.pack(side="left", padx=5)
         self.model_combo.bind("<<ComboboxSelected>>", self._settings_changed)
@@ -1553,7 +1585,7 @@ class RevisionDialog(tk.Toplevel):
         snapshot = (
             revision, self.source, self.mode_var.get(), self.operation,
             self.source_language_var.get(), self.target_language_var.get(),
-            self.model_var.get(), self.context_var.get(),
+            self.model_var.get(), self.context_var.get(), self.provider_var.get(),
         )
         self.preview_after_id = self.after(
             delay, lambda: self._launch_preview(snapshot)
@@ -1568,6 +1600,7 @@ class RevisionDialog(tk.Toplevel):
     def _compute_preview(
         self, revision: int, source: str, mode: str, operation: str,
         source_language: str, target_language: str, model: str, context: str,
+        provider: str,
     ) -> None:
         try:
             captions = load_captions(source)
@@ -1577,7 +1610,7 @@ class RevisionDialog(tk.Toplevel):
                 estimate = estimate_revision(
                     captions, mode=mode, operation=operation, model=model,
                     source_language=source_language, target_language=target_language,
-                    user_context=context,
+                    user_context=context, provider=provider,
                 )
                 error = None
         except (OSError, ValueError, RevisionError) as exc:
@@ -1613,7 +1646,7 @@ class RevisionDialog(tk.Toplevel):
         qualifier = " (approssimativa)" if estimate.approximate else ""
         self.estimate_var.set(
             f"Costo stimato per {estimate.group_count} gruppi: "
-            f"${estimate.cost_usd:.4f} USD{qualifier}"
+            f"{format_currency(estimate.cost_usd, self.exchange_rate)}{qualifier}"
         )
 
     def _mode_changed(self) -> None:
@@ -1623,12 +1656,13 @@ class RevisionDialog(tk.Toplevel):
 
     def _provider_changed(self, _event: object | None = None) -> None:
         provider = self.provider_var.get() if hasattr(self, "provider_var") else self.translation_provider_var.get()
-        models = list(PROVIDER_MODELS.get(provider, PROVIDER_MODELS[PROVIDER_OPENAI]))
+        catalog = self.model_catalog if hasattr(self, "model_catalog") else catalog_from_disk()[0]
+        models = list(executable_model_ids(catalog, provider))
         combo = self.model_combo if hasattr(self, "model_combo") else self.translation_model_combo
         combo.configure(values=models)
         current = self.model_var.get() if hasattr(self, "model_var") else self.translation_model_var.get()
         if current not in models:
-            current = models[0]
+            current = models[0] if models else ""
             (self.model_var if hasattr(self, "model_var") else self.translation_model_var).set(current)
         if hasattr(self, "_schedule_preview"):
             self._schedule_preview()
@@ -1654,6 +1688,7 @@ class RevisionDialog(tk.Toplevel):
             model=self.model_var.get(), source_language=self.source_language_var.get(),
             target_language=self.target_language_var.get(),
             user_context=self.context_var.get(),
+            provider=self.provider_var.get() or PROVIDER_OPENAI,
         )
 
     def _update_mode_help(self) -> None:
@@ -1813,7 +1848,7 @@ class RevisionDialog(tk.Toplevel):
                 manifest = json.loads(record.read_text(encoding="utf-8"))
                 if (
                     str(Path(str(manifest.get("source", ""))).resolve()) == source
-                    and manifest.get("status") != "completed"
+                    and revision_needs_resume(manifest)
                     and manifest.get("operation", OPERATION_REVISION) == self.operation
                 ):
                     candidates.append((record.stat().st_mtime, record.parent))
@@ -1880,7 +1915,8 @@ class RevisionDialog(tk.Toplevel):
                     elif kind == "cost":
                         suffix = "" if value["complete"] else " (dati incompleti)"
                         self.cost_var.set(
-                            f"Costo effettivo ricevuto: ${value['cost_usd']:.4f} USD{suffix}"
+                            "Costo effettivo ricevuto: "
+                            f"{format_currency(float(value['cost_usd']), self.exchange_rate)}{suffix}"
                         )
                     elif kind == "stats":
                         self._show_stats(value)
@@ -1924,7 +1960,10 @@ class RevisionDialog(tk.Toplevel):
                 f"Modificati: {counts['modified']} · Validi ma invariati: "
                 f"{counts['unchanged']} · Originali mantenuti: {counts['rejected']}"
             ),
-            f"Costo registrato: ${cost['cost_usd']:.4f} USD{incomplete}",
+            (
+                "Costo registrato: "
+                f"{format_currency(float(cost['cost_usd']), self.exchange_rate)}{incomplete}"
+            ),
             (
                 f"Avvisi sui contenuti: {len(result.get('content_warnings', []))} · "
                 f"Parti non tradotte: {counts['rejected']}"
@@ -1945,6 +1984,7 @@ class RevisionDialog(tk.Toplevel):
             )
         if result.get("operation") == OPERATION_TRANSLATION:
             title = {
+                "partial_api_error": "Traduzione non riuscita; SRT parziale salvato",
                 "completed_with_untranslated": "Traduzione completata con parti non tradotte",
                 "completed_with_warnings": "Traduzione completata con avvisi",
             }.get(result.get("completion_status"), "Traduzione completata")
@@ -1952,7 +1992,14 @@ class RevisionDialog(tk.Toplevel):
             title = ("Nessuna modifica testuale applicata"
                      if counts["modified"] == 0 else "Revisione completata")
         self.status_var.set(title + ".")
-        self.status_var.set(title + ". " + details[-1])
+        if result.get("resumable"):
+            self.status_var.set(
+                title
+                + ". Il testo originale è stato mantenuto dove la richiesta non è "
+                "riuscita. Premi Riprendi per ritentare."
+            )
+        else:
+            self.status_var.set(title + ". " + details[-1])
         self.worker = None
         self._set_running(False)
 
@@ -2032,6 +2079,11 @@ class App(ttk.Frame):
         self.translation_target_var = tk.StringVar(value="it")
         self.translation_model_var = tk.StringVar(value=MODEL_SOL)
         self.translation_provider_var = tk.StringVar(value=PROVIDER_OPENAI)
+        self.model_catalog, _catalog_cached = catalog_from_disk()
+        self.model_availability: dict[str, set[str]] = {}
+        self.model_catalog_events: queue.Queue[tuple[dict[str, Any], dict[str, set[str]], dict[str, str], Any, bool]] = queue.Queue()
+        self.exchange_rate = load_exchange_rate()
+        self.model_catalog_refreshing = False
         self.translation_context_var = tk.StringVar()
         self.summary_checkbox_var = tk.BooleanVar(value=False)
         self.summary_worker: SummaryWorker | None = None
@@ -2104,7 +2156,9 @@ class App(ttk.Frame):
         self.start_time_var.trace_add("write", self._on_time_field_changed)
         self.end_time_var.trace_add("write", self._on_time_field_changed)
         self._set_workflow_controls(True)
+        self._refresh_model_summary()
         self.master.after(100, self._poll)
+        self.master.after(250, self._refresh_model_catalog)
 
     def _build_v08(self) -> None:
         self.master.title(tr("app.name"))
@@ -2155,9 +2209,6 @@ class App(ttk.Frame):
         source = ttk.LabelFrame(layout, text=tr("main.source"), padding=12)
         source.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         source.columnconfigure(1, weight=1)
-        ttk.Label(source, textvariable=self.source_hint_var, wraplength=760).grid(
-            row=4, column=0, columnspan=4, sticky="w", pady=(7, 0)
-        )
         self.video_entry = ttk.Entry(source, textvariable=self.video_display_var, state="readonly")
         self.video_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
         ttk.Label(source, text=tr("main.video")).grid(row=0, column=0, sticky="w")
@@ -2192,6 +2243,22 @@ class App(ttk.Frame):
         HelpButton(
             speech_row, tr("help.spoken.title"), tr("help.spoken.body"),
         ).pack(side="left")
+        srt_row = ttk.Frame(source)
+        srt_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        srt_row.columnconfigure(0, weight=1)
+        ttk.Label(srt_row, text=tr("main.existing_srt"), wraplength=610).grid(
+            row=0, column=0, sticky="w"
+        )
+        self.translate_srt_button = ttk.Button(
+            srt_row, text=tr("menu.translate_srt"), command=self.translate_existing_srt
+        )
+        self.translate_srt_button.grid(row=0, column=1, sticky="e", padx=(10, 0))
+        self.source_hint_var_label = ttk.Label(
+            source, textvariable=self.source_hint_var, wraplength=760
+        )
+        self.source_hint_var_label.grid(
+            row=5, column=0, columnspan=4, sticky="w", pady=(7, 0)
+        )
 
         final = ttk.LabelFrame(layout, text=tr("main.final_subtitles"), padding=12)
         final.grid(row=2, column=0, sticky="ew", pady=(0, 10))
@@ -2286,31 +2353,41 @@ class App(ttk.Frame):
         ttk.Label(model_row, text=tr("main.translation_model")).pack(side="left")
         self.translation_model_combo = ttk.Combobox(
             model_row, width=23, state="readonly", textvariable=self.translation_model_var,
-            values=list(PROVIDER_MODELS[PROVIDER_OPENAI]),
+            values=self._available_model_ids(PROVIDER_OPENAI),
         )
         self.translation_model_combo.pack(side="left", padx=(8, 6))
-        self.translation_model_combo.bind("<<ComboboxSelected>>", self._update_translation_estimate)
+        self.translation_model_combo.bind("<<ComboboxSelected>>", self._model_changed)
         HelpButton(
             model_row, tr("help.model.title"), tr("help.model.body"),
         ).pack(side="left")
+        self.refresh_models_button = ttk.Button(
+            model_row, text=tr("main.refresh_models"),
+            command=lambda: self._refresh_model_catalog(force=True),
+        )
+        self.refresh_models_button.pack(side="left", padx=(8, 0))
+        self.model_quality_var = tk.StringVar()
+        ttk.Label(
+            self.advanced_frame, textvariable=self.model_quality_var,
+            wraplength=780, justify="left",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Label(self.advanced_frame, text=tr("main.context")).grid(
-            row=1, column=0, sticky="w", pady=(8, 0)
+            row=2, column=0, sticky="w", pady=(8, 0)
         )
         self.translation_context_entry = ttk.Entry(
             self.advanced_frame, textvariable=self.translation_context_var
         )
         self.translation_context_entry.grid(
-            row=1, column=1, sticky="ew", padx=(8, 6), pady=(8, 0)
+            row=2, column=1, sticky="ew", padx=(8, 6), pady=(8, 0)
         )
         HelpButton(
             self.advanced_frame, tr("help.context.title"), tr("help.context.body"),
-        ).grid(row=1, column=2, pady=(8, 0))
+        ).grid(row=2, column=2, pady=(8, 0))
         self.translation_estimate_label = ttk.Label(
             self.advanced_frame, textvariable=self.translation_estimate_var,
             wraplength=780, justify="left",
         )
         self.translation_estimate_label.grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(8, 0)
+            row=3, column=0, columnspan=3, sticky="w", pady=(8, 0)
         )
         self.model_summary_label = ttk.Label(final, textvariable=self.model_summary_var)
         self.model_summary_label.grid(
@@ -2529,18 +2606,101 @@ class App(ttk.Frame):
     def _refresh_model_summary(self, *_args: object) -> None:
         model = self.translation_model_var.get() or MODEL_SOL
         provider = self.translation_provider_var.get() or PROVIDER_OPENAI
+        quality, evidence = quality_label(self.model_catalog, provider, model)
         text = tr("main.model_selected", model=f"{provider} · {model}")
         if hasattr(self, "model_summary_var"):
             self.model_summary_var.set(text)
+        if hasattr(self, "model_quality_var"):
+            label = tr(f"quality.{quality}")
+            if evidence:
+                languages = ", ".join(str(item).upper() for item in evidence.get("languages", []))
+                self.model_quality_var.set(
+                    tr("main.model_quality", quality=label,
+                       date=str(evidence.get("assessed_at", "?")), languages=languages)
+                )
+            else:
+                self.model_quality_var.set(tr("main.model_quality_unrated"))
+
+    def _available_model_ids(self, provider: str) -> list[str]:
+        available = self.model_availability.get(provider)
+        models = list(executable_model_ids(self.model_catalog, provider, available))
+        if not models and available is not None:
+            return []
+        return models or list(PROVIDER_MODELS.get(provider, ()))
+
+    def _model_changed(self, _event: object | None = None) -> None:
+        self._refresh_model_summary()
+        self._update_translation_estimate()
 
     def _provider_changed(self, _event: object | None = None) -> None:
         provider = self.translation_provider_var.get() or PROVIDER_OPENAI
-        models = list(PROVIDER_MODELS.get(provider, PROVIDER_MODELS[PROVIDER_OPENAI]))
+        models = self._available_model_ids(provider)
         self.translation_model_combo.configure(values=models)
         if self.translation_model_var.get() not in models:
-            self.translation_model_var.set(models[0])
+            self.translation_model_var.set(models[0] if models else "")
         self._refresh_model_summary()
         self._update_translation_estimate()
+
+    def _refresh_model_catalog(self, force: bool = False) -> None:
+        if self.model_catalog_refreshing:
+            return
+        self.model_catalog_refreshing = True
+        if hasattr(self, "refresh_models_button"):
+            self.refresh_models_button.configure(state="disabled")
+
+        api_keys = {
+            provider: load_provider_api_key(provider) or ""
+            for provider in AI_PROVIDERS
+        }
+
+        def work() -> None:
+            catalog, _updated, catalog_error = refresh_catalog_if_due(force)
+            available, errors = discover_models(api_keys)
+            if catalog_error:
+                errors["catalog"] = catalog_error
+            exchange_rate, exchange_error = refresh_exchange_if_due(force)
+            if exchange_error:
+                errors["exchange"] = exchange_error
+            self.model_catalog_events.put((catalog, available, errors, exchange_rate, force))
+
+        threading.Thread(target=work, daemon=True, name="srt-compass-models").start()
+
+    def _apply_model_catalog_events(self) -> None:
+        try:
+            while True:
+                catalog, available, errors, exchange_rate, forced = self.model_catalog_events.get_nowait()
+                self.model_catalog = catalog
+                self.model_availability = available
+                self.exchange_rate = exchange_rate
+                self.model_catalog_refreshing = False
+                if hasattr(self, "refresh_models_button"):
+                    self.refresh_models_button.configure(
+                        state="normal" if self._workflow_controls_enabled else "disabled"
+                    )
+                provider = self.translation_provider_var.get() or PROVIDER_OPENAI
+                models = self._available_model_ids(provider)
+                self.translation_model_combo.configure(values=models)
+                if self.translation_model_var.get() not in models and models:
+                    self.translation_model_var.set(models[0])
+                discovered = self.model_availability.get(provider, set()) - {
+                    item["id"] for item in verified_models(self.model_catalog, provider)
+                }
+                if discovered and hasattr(self, "model_quality_var"):
+                    self.model_quality_var.set(
+                        tr("main.model_unverified", models=", ".join(sorted(discovered)))
+                    )
+                self._refresh_model_summary()
+                if not (self.workflow_active or self.worker or self.translation_worker or self.summary_worker):
+                    self._update_cost()
+                if self.translation_captions and not self.translation_worker:
+                    self._update_translation_estimate()
+                if forced and errors:
+                    self.status_var.set(tr("main.catalog_partial"))
+        except queue.Empty:
+            pass
+
+    def _format_cost(self, cost_usd: float, decimals: int = 4) -> str:
+        return format_currency(cost_usd, self.exchange_rate, decimals=decimals)
 
     def _refresh_work_summary(self) -> None:
         if self._active_download():
@@ -2551,7 +2711,7 @@ class App(ttk.Frame):
             self.work_summary_var.set(f"Download · {title}")
             return
         if not self.media:
-            self.work_summary_var.set("Scegli un video o scaricalo da un link.")
+            self.work_summary_var.set(tr("main.choose_source"))
             return
         name = Path(self.video_var.get() or self.media.path).name
         language = self.target_language.get()
@@ -2591,11 +2751,12 @@ class App(ttk.Frame):
         if value:
             self.master.clipboard_clear()
             self.master.clipboard_append(value)
-            self.status_var.set("Percorso del video copiato negli appunti.")
+            self.status_var.set(tr("main.path_copied"))
 
     def _new_work(self) -> None:
         if self.worker or self.translation_worker or getattr(self, "summary_worker", None) or self._active_download():
             return
+        self._clear_translation_flow()
         self.download_state = "inattivo"
         self.media = None
         self.video_var.set("")
@@ -2605,8 +2766,8 @@ class App(ttk.Frame):
         self.start_time_var.set("00:00:00")
         self.end_time_var.set("00:00:00")
         self.translation_estimate_var.set("")
-        self.cost_var.set("Scegli un video o importa un link per vedere la stima.")
-        self.status_var.set("Scegli un video per iniziare.")
+        self.cost_var.set(tr("main.estimate_video"))
+        self.status_var.set(tr("main.select_media_to_start"))
         self.result_summary_var.set("Il file comparirà qui al termine del lavoro.")
         self.summary_checkbox_var.set(False)
         self.summary_requested = False
@@ -2623,9 +2784,6 @@ class App(ttk.Frame):
         self.final_output_path = None
         self.result_report_path = None
         self.job_resumable = False
-        self.translation_source = None
-        self.translation_captions = []
-        self.ready_to_translate = False
         self.open_result_button.configure(state="disabled")
         self.show_finder_button.configure(state="disabled")
         self.show_issues_button.configure(state="disabled")
@@ -2633,6 +2791,72 @@ class App(ttk.Frame):
         self.progress.configure(value=0, maximum=1)
         self._set_workflow_controls(True)
         self._enable_start()
+
+    def _clear_translation_flow(self) -> None:
+        """Drop UI references and pending estimates from the previous video job."""
+        self.translation_estimate_revision += 1
+        if self.translation_estimate_after:
+            try:
+                self.master.after_cancel(self.translation_estimate_after)
+            except tk.TclError:
+                pass
+            self.translation_estimate_after = None
+        while True:
+            try:
+                self.translation_estimate_events.get_nowait()
+            except queue.Empty:
+                break
+        self.translation_source = None
+        self.translation_captions = []
+        self.translation_source_var.set("")
+        self.translation_estimate_var.set("")
+        self.translation_status_var.set("")
+        self.translation_cost_var.set("")
+        self.translation_job_path = None
+        self.ready_to_translate = False
+
+    def _clear_previous_media_result(self) -> None:
+        """Detach every result and resumable reference owned by the prior video."""
+        self._clear_translation_flow()
+        self.summary_estimate_revision += 1
+        while True:
+            try:
+                self.summary_estimate_events.get_nowait()
+            except queue.Empty:
+                break
+        while True:
+            try:
+                self.result_count_events.get_nowait()
+            except queue.Empty:
+                break
+        self.current_job_path = None
+        self.transcription_job_path = None
+        self.translation_job_path = None
+        self.final_output_path = None
+        self.result_report_path = None
+        self.job_resumable = False
+        self.workflow_active = False
+        self.summary_requested = False
+        self.summary_waiting_for_approval = False
+        self.summary_srt_path = None
+        self.summary_output = None
+        self.summary_parent_job = None
+        self.summary_language = ""
+        self.summary_interval = (0.0, 0.0)
+        self.summary_checkbox_var.set(False)
+        self.summary_estimate_var.set("")
+        self.summary_result_var.set("")
+        self.result_summary_var.set(tr("main.result_pending"))
+        self.output_var.set("")
+        self.open_result_button.configure(state="disabled")
+        self.show_finder_button.configure(state="disabled")
+        self.show_issues_button.configure(state="disabled")
+        self.open_summary_button.configure(state="disabled")
+        self.output_path_button.configure(state="disabled")
+        self.progress.configure(value=0, maximum=1)
+        self.log_panel.clear()
+        self.activity_var.set("")
+        self._clear_activity_clock()
 
     def _request_close(self) -> None:
         if not self.worker and not self.translation_worker and not self.summary_worker and not self._active_download():
@@ -2652,6 +2876,16 @@ class App(ttk.Frame):
         return dialog.worker if dialog and dialog.worker else None
 
     def _download_started(self) -> None:
+        # The explicit download action replaces the current source. Detach the
+        # previous media immediately so a cancelled or slow transfer can never
+        # leave video A looking like the source of the upcoming job B.
+        self._clear_previous_media_result()
+        self.media = None
+        self.video_var.set("")
+        self.track_var.set("")
+        self.track.configure(values=(), state="disabled")
+        self.start_time_var.set("00:00:00")
+        self.end_time_var.set("00:00:00")
         self.download_state = "preparazione"
         self.cancel_requested = False
         self._clear_activity_clock()
@@ -2948,14 +3182,30 @@ class App(ttk.Frame):
         source = language_code(self.source_language.get()) or "auto"
         return source == "auto" or source != target
 
+    def _standalone_tools_busy(self) -> bool:
+        """Return whether starting an independent SRT operation would conflict."""
+        active_download = (
+            self._active_download() if hasattr(self, "_active_download") else None
+        )
+        return bool(
+            getattr(self, "worker", None)
+            or getattr(self, "translation_worker", None)
+            or getattr(self, "summary_worker", None)
+            or active_download
+            or getattr(self, "_busy", False)
+        )
+
     def _set_workflow_controls(self, enabled: bool) -> None:
         self._workflow_controls_enabled = enabled
         video_ready = enabled and self.media is not None
         translation_ready = video_ready and self._translation_options_needed()
+        standalone_tools_state = (
+            "disabled" if self._standalone_tools_busy() else "normal"
+        )
         if hasattr(self, "source_hint_var"):
             if not self.media:
-                self.source_hint_var.set("Disponibile dopo il caricamento del video.")
-                self.final_hint_var.set("Disponibile dopo il caricamento del video.")
+                self.source_hint_var.set("")
+                self.final_hint_var.set(tr("main.video_required"))
             elif not enabled:
                 self.source_hint_var.set("Le impostazioni sono bloccate durante il lavoro.")
                 self.final_hint_var.set("Le impostazioni sono bloccate durante il lavoro.")
@@ -3010,6 +3260,11 @@ class App(ttk.Frame):
             self.translation_provider_combo.configure(
                 state="readonly" if translation_ready else "disabled"
             )
+        if hasattr(self, "refresh_models_button"):
+            self.refresh_models_button.configure(
+                state=("normal" if translation_ready and not self.model_catalog_refreshing
+                       else "disabled")
+            )
         self.translation_context_entry.configure(
             state="normal" if translation_ready else "disabled"
         )
@@ -3023,8 +3278,10 @@ class App(ttk.Frame):
             self.start_button.configure(state="disabled")
         for index in range(self.master.tools_menu.index("end") + 1):
             self.master.tools_menu.entryconfigure(
-                index, state="normal" if enabled else "disabled"
+                index, state=standalone_tools_state
             )
+        if hasattr(self, "translate_srt_button"):
+            self.translate_srt_button.configure(state=standalone_tools_state)
         language_state = "normal" if enabled and not (
             getattr(self, "worker", None) or getattr(self, "translation_worker", None)
             or getattr(self, "summary_worker", None)
@@ -3149,6 +3406,8 @@ class App(ttk.Frame):
         temporary.replace(destination)
 
     def _prepare_translation(self, result: dict[str, Any]) -> None:
+        self._clear_translation_flow()
+        self.job_resumable = False
         target = str(result.get("target_language", "original"))
         if target == "original":
             self.status_var.set(f"Sottotitoli salvati: {result['output']}")
@@ -3197,6 +3456,10 @@ class App(ttk.Frame):
         self.final_output_path = Path(
             str(result.get("final_output") or self.final_output_path or self.output_var.get())
         )
+        self.job_resumable = False
+        self.translation_job_path = None
+        if self.transcription_job_path:
+            self.current_job_path = self.transcription_job_path / "job.json"
         self.ready_to_translate = True
         self.workflow_active = False
         try:
@@ -3378,7 +3641,7 @@ class App(ttk.Frame):
             self.status_var.set("La scheda non è partita; correggi il problema o riprova.")
             return
         self.summary_estimate_var.set(
-            f"Scheda TXT: circa ${estimate.cost_usd:.4f} USD "
+            f"Scheda TXT: circa {self._format_cost(estimate.cost_usd)} "
             f"(ricerca web e token inclusi, stima approssimativa). "
             "Il testo SRT verrà inviato a OpenAI; l’audio non verrà reinviato. "
             "Stima, non limite massimo di spesa."
@@ -3458,7 +3721,7 @@ class App(ttk.Frame):
         output = Path(str(result.get("output", "")))
         cost = result.get("cost") or {}
         cost_text = (
-            f"${float(cost.get('cost_usd', 0)):.4f} USD"
+            self._format_cost(float(cost.get("cost_usd", 0)))
             + (" · consumo incompleto" if not cost.get("complete", False) else "")
         )
         if result.get("source_status") == "verified":
@@ -3533,6 +3796,7 @@ class App(ttk.Frame):
                 operation=OPERATION_TRANSLATION, model=model,
                 source_language=source, target_language=target,
                 user_context=context,
+                provider=self.translation_provider_var.get() or PROVIDER_OPENAI,
             )
             self.translation_estimate_events.put((revision, estimate, None))
         except Exception as exc:  # noqa: BLE001 - visualizza il problema senza bloccare Tk
@@ -3557,7 +3821,7 @@ class App(ttk.Frame):
         qualifier = " (approssimativa)" if estimate.approximate else ""
         self.translation_estimate_var.set(
             f"Traduzione: {estimate.group_count} gruppi · circa "
-            + "$" + f"{estimate.cost_usd:.4f} USD{qualifier}. "
+            + self._format_cost(estimate.cost_usd) + qualifier + ". "
             "Stima, non limite massimo di spesa."
         )
         self.progress.configure(maximum=max(1, estimate.group_count), value=0)
@@ -3634,9 +3898,14 @@ class App(ttk.Frame):
         self._set_busy(False)
         if self.current_job_path and self.current_job_path.is_file():
             try:
-                self.job_resumable = json.loads(
+                saved_workflow = json.loads(
                     self.current_job_path.read_text(encoding="utf-8")
-                ).get("status") != "completed"
+                )
+                self.job_resumable = bool(
+                    self.job_resumable
+                    or saved_workflow.get("status") != "completed"
+                    or saved_workflow.get("workflow_stage") == "translation"
+                )
             except (OSError, ValueError):
                 self.job_resumable = True
         self._set_workflow_controls(True)
@@ -3653,21 +3922,22 @@ class App(ttk.Frame):
     def choose_video(self) -> None:
         if self.worker or self.translation_worker or self._active_download() or self.workflow_active or self._busy:
             messagebox.showinfo(
-                "Lavoro in corso", "Interrompi o completa il lavoro prima di cambiare video."
+                "Lavoro in corso",
+                "Interrompi o completa il lavoro prima di cambiare file multimediale.",
             )
             return
         selected = filedialog.askopenfilename(
-            title="Scegli un video", filetypes=[("Video", "*.mp4 *.mov *.mkv")]
+            title=tr("dialog.media.choose"), filetypes=local_media_filetypes()
         )
         if not selected:
             return
+        self._clear_translation_flow()
         self.download_state = "inattivo"
         self.master.minsize(760, 630)
-        self.translation_source = None
-        self.translation_captions = []
-        self.ready_to_translate = False
         self.final_output_path = None
         self.result_report_path = None
+        self.job_resumable = False
+        self.workflow_active = False
         self.current_job_path = None
         self.transcription_job_path = None
         self.translation_job_path = None
@@ -3681,7 +3951,7 @@ class App(ttk.Frame):
         self.media = None
         self.track.configure(state="disabled", values=())
         self.start_button.configure(state="disabled")
-        self.status_var.set("Leggo le informazioni del video…")
+        self.status_var.set(tr("main.reading_media"))
         self._set_workflow_controls(False)
         self._set_busy(True)
         threading.Thread(target=self._probe, args=(selected,), daemon=True).start()
@@ -3724,9 +3994,12 @@ class App(ttk.Frame):
             self._enable_start()
 
     def _receive_media(self, media: MediaInfo) -> None:
+        # Used by both local-file selection and completed downloads: do not let
+        # any result, translation or resume reference from video A leak into B.
+        self._clear_previous_media_result()
         self._set_busy(False)
         self.media = media
-        self._set_workflow_controls(True)
+        self.video_var.set(media.path)
         labels = [track.label for track in media.audio_tracks]
         self.track.configure(
             values=labels, state="readonly" if labels else "disabled"
@@ -3742,8 +4015,9 @@ class App(ttk.Frame):
         default_output = Path(media.path).with_suffix(".srt")
         self.output_var.set(str(default_output))
         self._reset_range()
+        self._set_workflow_controls(True)
         self._update_cost()
-        self.status_var.set("Pronto. Controlla la traccia audio e avvia quando vuoi.")
+        self.status_var.set(tr("main.media_ready"))
         self._enable_start()
 
     def _on_time_field_changed(self, *_args: object) -> None:
@@ -3781,7 +4055,7 @@ class App(ttk.Frame):
 
     def _read_interval(self) -> tuple[float, float]:
         if not self.media:
-            raise StartTimeError("Seleziona prima un video.")
+            raise StartTimeError(tr("main.select_media_first"))
         return parse_time_range(
             self.start_time_var.get(),
             self.end_time_var.get(),
@@ -3790,7 +4064,7 @@ class App(ttk.Frame):
 
     def _update_cost(self) -> None:
         if not self.media:
-            self.cost_var.set("Seleziona un video per vedere la stima.")
+            self.cost_var.set(tr("main.estimate_video"))
             self._refresh_work_summary()
             return
         try:
@@ -3803,7 +4077,7 @@ class App(ttk.Frame):
         selected_seconds = end_seconds - start_seconds
         self.cost_var.set(
             f"Durata da elaborare: {selected_seconds / 60:.1f} minuti · "
-            f"stima trascrizione: ${estimate_cost_usd(selected_seconds):.2f} USD"
+            f"stima trascrizione: {self._format_cost(estimate_cost_usd(selected_seconds), 2)}"
             + (
                 " · traduzione stimata dopo la trascrizione"
                 if self.target_language.get() != "Originale" else ""
@@ -3859,6 +4133,7 @@ class App(ttk.Frame):
         if track_index < 0:
             messagebox.showerror("Traccia audio", "Scegli una traccia audio.")
             return
+        self._clear_translation_flow()
         track = self.media.audio_tracks[track_index]
         source_language = language_code(self.source_language.get()) or "auto"
         target_language = language_code(self.target_language.get()) or "original"
@@ -3890,6 +4165,7 @@ class App(ttk.Frame):
                 )
                 suffix += 1
         self.transcription_job_path = None
+        self.translation_job_path = None
         self.current_job_path = None
         self.job_resumable = False
         self.ready_to_translate = False
@@ -4136,11 +4412,12 @@ class App(ttk.Frame):
                 raise ValueError("Manca la configurazione della chiave API.")
             if not Path(manifest["video"]).is_file():
                 raise ValueError(
-                    "Il video originale non si trova più nel percorso salvato."
+                    "Il file multimediale originale non si trova più nel percorso salvato."
                 )
             if fingerprint(manifest["video"]) != manifest["fingerprint"]:
                 raise ValueError(
-                    "Il video originale è cambiato. Avvia un nuovo lavoro per evitare tempi errati."
+                    "Il file multimediale originale è cambiato. Avvia un nuovo lavoro "
+                    "per evitare tempi errati."
                 )
             self.worker = SubtitleWorker(
                 manifest["video"],
@@ -4221,6 +4498,7 @@ class App(ttk.Frame):
         self.status_var.set("Riprendo il lavoro salvato…")
 
     def _poll(self) -> None:
+        self._apply_model_catalog_events()
         self._apply_translation_estimate()
         self._apply_summary_estimate()
         try:
@@ -4241,7 +4519,8 @@ class App(ttk.Frame):
                     self._set_busy(False)
                     self._set_workflow_controls(True)
                     self.status_var.set(
-                        f"Non riesco a leggere il video: {value}. Scegli un altro file e riprova."
+                        f"Non riesco a leggere il file multimediale: {value}. "
+                        "Scegli un altro file e riprova."
                     )
         except queue.Empty:
             pass
@@ -4355,14 +4634,16 @@ class App(ttk.Frame):
                             "\nCosto effettivo:"
                         )[0]
                         self.translation_estimate_var.set(
-                            prefix + "\nCosto effettivo: $"
-                            + f"{value['cost_usd']:.4f} USD{suffix}"
+                            prefix + "\nCosto effettivo: "
+                            + self._format_cost(float(value["cost_usd"])) + suffix
                         )
                     elif kind == "complete":
-                        self.job_resumable = False
+                        self.job_resumable = bool(value.get("resumable"))
                         counts = value["counts"]
                         completion = value.get("completion_status", "completed")
                         label = {
+                            "partial_api_error":
+                                "Traduzione non riuscita; SRT parziale salvato",
                             "completed_with_untranslated":
                                 "Completato con parti non tradotte",
                             "completed_with_warnings": "Completato con avvisi",
@@ -4383,7 +4664,11 @@ class App(ttk.Frame):
                         if self.transcription_job_path and self.transcription_job_path.is_dir():
                             try:
                                 manifest = load_job(self.transcription_job_path)
-                                manifest["workflow_stage"] = "completed"
+                                manifest["workflow_stage"] = (
+                                    "translation"
+                                    if value.get("resumable")
+                                    else "completed"
+                                )
                                 manifest["final_output"] = str(Path(value["output"]).resolve())
                                 cost = value.get("cost") or {}
                                 manifest["translation_cost_usd"] = (
@@ -4392,7 +4677,7 @@ class App(ttk.Frame):
                                 save_job(self.transcription_job_path, manifest)
                             except (OSError, ValueError, KeyError):
                                 pass
-                        if self.summary_requested:
+                        if self.summary_requested and not value.get("resumable"):
                             self._prepare_summary_for_srt(
                                 value["output"], self.translation_target_var.get(),
                                 parent_job=self.transcription_job_path,
@@ -4429,7 +4714,8 @@ class App(ttk.Frame):
                         self.log_panel.add_line(str(value["line"]))
                     elif kind == "cost":
                         self.summary_estimate_var.set(
-                            f"Costo effettivo scheda: ${value['cost_usd']:.4f} USD"
+                            "Costo effettivo scheda: "
+                            + self._format_cost(float(value["cost_usd"]))
                             + (" · consumo incompleto" if not value.get("complete") else "")
                         )
                     elif kind == "complete":
@@ -4574,8 +4860,10 @@ class App(ttk.Frame):
             RevisionDialog(self.master, source, OPERATION_TRANSLATION, language, "it")
 
     def _tools_available(self) -> bool:
-        if self.worker or self.translation_worker or self.summary_worker or self._active_download() or self.workflow_active or self._busy:
-            self.status_var.set("Completa o interrompi il lavoro corrente prima di aprire uno strumento.")
+        if self._standalone_tools_busy():
+            self.status_var.set(
+                "Completa o interrompi il lavoro corrente prima di aprire uno strumento."
+            )
             return False
         return True
 

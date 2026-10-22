@@ -16,6 +16,8 @@ from .config import (
 )
 from .event_log import EventLog
 from .jobs import atomic_json
+from .model_catalog import catalog_from_disk, model_metadata
+from .model_catalog import model_rates as catalog_model_rates
 from .readability import readability_warnings, segment_captions
 from .revision import (
     INSTRUCTION_VERSION,
@@ -30,7 +32,6 @@ from .revision import (
     default_model,
     estimate_revision,
     load_captions,
-    model_rates,
     normalize_revision_mode,
     render_revised_srt,
     response_schema,
@@ -128,9 +129,13 @@ class RevisionWorker(threading.Thread):
                 source_language=self.source_language,
                 target_language=self.target_language, user_context=self.user_context,
             )
-        input_rate, output_rate = model_rates(self.model)
+        catalog, _cached = catalog_from_disk()
+        metadata = model_metadata(catalog, self.provider, self.model)
+        input_rate, output_rate, rate_period = catalog_model_rates(
+            catalog, self.provider, self.model
+        )
         manifest = {
-            "version": 4,
+            "version": 5,
             "type": "subtitle_translation" if self.operation == OPERATION_TRANSLATION else "subtitle_revision",
             "status": "ready",
             "source": str(Path(self.source).resolve()),
@@ -141,7 +146,13 @@ class RevisionWorker(threading.Thread):
             "pricing": {
                 "input_per_million": input_rate,
                 "output_per_million": output_rate,
+                "rate_period": rate_period,
+                "currency": "USD",
             },
+            "catalog_version": catalog.get("catalog_version"),
+            "catalog_verified_at": catalog.get("verified_at"),
+            "model_quality": metadata.get("quality") if metadata else "unrated",
+            "model_quality_evidence": metadata.get("quality_evidence") if metadata else None,
             "instruction_version": INSTRUCTION_VERSION,
             "validator_version": VALIDATOR_VERSION,
             "revision_mode": self.mode,
@@ -150,7 +161,9 @@ class RevisionWorker(threading.Thread):
             "target_language": self.target_language,
             "user_context": self.user_context,
             "parent_job": self.parent_job,
-            "reasoning_effort": "none" if self.model in REASONING_MODELS else None,
+            "reasoning_effort": metadata.get("reasoning_effort") if metadata else (
+                "none" if self.model in REASONING_MODELS else None
+            ),
             "caption_count": len(captions),
             "usage_complete": True,
             "groups": groups,
@@ -235,6 +248,7 @@ class RevisionWorker(threading.Thread):
 
             self._event("status", f"Revisione: gruppo {index + 1} di {total}…")
             self.event_log.write(f"Elaborazione gruppo {index + 1} di {total}.")
+            request_failed_here = False
             if api_failure:
                 validation = self._original_fallback(payload, api_failure)
                 result = {"captions": [], "ambiguities": [], "usage": None}
@@ -247,6 +261,7 @@ class RevisionWorker(threading.Thread):
                     validation = self._original_fallback(payload, api_failure)
                     result = {"captions": [], "ambiguities": [], "usage": None}
                     group["status"] = "rejected"
+                    request_failed_here = True
                     self.event_log.write(
                         f"Errore API nel gruppo {index + 1}; userò il testo originale "
                         "per i gruppi non ancora elaborati.",
@@ -255,7 +270,10 @@ class RevisionWorker(threading.Thread):
                     self._event("warning", api_failure)
             if api_failure:
                 revised = result.get("captions")
-                self._record_attempt(manifest, group, index, result, validation)
+                if request_failed_here:
+                    self._record_failed_attempt(
+                        manifest, group, index, api_failure, validation
+                    )
                 response_record = {
                     "version": 4, "revision_mode": self.mode,
                     "raw_captions": revised, "captions": validation["captions"],
@@ -416,16 +434,21 @@ class RevisionWorker(threading.Thread):
             )
         else:
             report = None
+        resumable_api_failure = bool(
+            api_failure and self.operation == OPERATION_TRANSLATION
+        )
         completion_status = (
-            "completed_with_untranslated"
-            if summary["rejections"] or api_failure
+            "partial_api_error"
+            if resumable_api_failure
+            else "completed_with_untranslated"
+            if summary["rejections"]
             else "completed_with_warnings"
             if issues or summary["anomalies"] or warnings
             else "completed"
         )
         manifest.update(
             {
-                "status": "completed",
+                "status": "error" if resumable_api_failure else "completed",
                 "completion_status": completion_status,
                 "result_counts": summary["counts"],
                 "rejections": summary["rejections"],
@@ -443,6 +466,7 @@ class RevisionWorker(threading.Thread):
                 "actual_cost": self._cost_summary(manifest),
                 "issue_report": str(report) if report else None,
                 "api_failure": api_failure,
+                "resumable": resumable_api_failure,
             }
         )
         atomic_json(self.job_dir / "revision.json", manifest)
@@ -463,10 +487,16 @@ class RevisionWorker(threading.Thread):
                 "completion_status": completion_status,
                 "issue_report": str(report) if report else None,
                 "api_failure": api_failure,
+                "resumable": resumable_api_failure,
                 "cost": manifest["actual_cost"],
             },
         )
-        self.event_log.write("Lavoro completato.")
+        self.event_log.write(
+            "Traduzione parziale salvata; il lavoro può essere ripreso."
+            if resumable_api_failure
+            else "Lavoro completato.",
+            level="WARNING" if resumable_api_failure else "INFO",
+        )
 
     @staticmethod
     def _write_issue_report(
@@ -664,6 +694,37 @@ class RevisionWorker(threading.Thread):
         if self.event_log:
             self.event_log.write("Risposta ricevuta; consumo registrato.")
 
+    def _record_failed_attempt(
+        self,
+        manifest: dict[str, Any],
+        group: dict[str, Any],
+        index: int,
+        error: str,
+        validation: dict[str, Any],
+    ) -> None:
+        """Record one failed provider request without inventing a response or usage."""
+        assert self.job_dir is not None
+        attempts = group.setdefault("attempts", [])
+        attempt_name = f"group-{index:04d}-attempt-{len(attempts) + 1:02d}.json"
+        atomic_json(
+            self.job_dir / attempt_name,
+            {
+                "raw_captions": None,
+                "ambiguities": [],
+                "validation": validation,
+                "usage": None,
+                "error": error,
+            },
+        )
+        attempts.append(attempt_name)
+        manifest["usage_complete"] = False
+        atomic_json(self.job_dir / "revision.json", manifest)
+        if self.event_log:
+            self.event_log.write(
+                "Richiesta fallita; il provider non ha restituito dati di consumo.",
+                level="ERROR",
+            )
+
     @staticmethod
     def _migrate_manifest(manifest: dict[str, Any]) -> None:
         original_version = int(manifest.get("version", 1))
@@ -678,6 +739,10 @@ class RevisionWorker(threading.Thread):
         manifest.setdefault("target_language", manifest["source_language"])
         manifest.setdefault("user_context", "")
         manifest.setdefault("provider", PROVIDER_OPENAI)
+        manifest.setdefault("catalog_version", None)
+        manifest.setdefault("catalog_verified_at", None)
+        manifest.setdefault("model_quality", "unrated")
+        manifest.setdefault("model_quality_evidence", None)
 
     def _validated_group_items(
         self,
@@ -862,8 +927,17 @@ class RevisionWorker(threading.Thread):
                     ensure_ascii=False,
                 )
             )
-        if self.model in REASONING_MODELS:
-            request["reasoning"] = {"effort": "none"}
+        reasoning_effort = None
+        if self.job_dir:
+            try:
+                saved = self._load_job(self.job_dir)
+                reasoning_effort = saved.get("reasoning_effort")
+            except (OSError, ValueError):
+                pass
+        if reasoning_effort is None and self.model in REASONING_MODELS:
+            reasoning_effort = "none"
+        if reasoning_effort:
+            request["reasoning"] = {"effort": reasoning_effort}
         response = post_provider_json(
             self.api_key, "/responses", request, self.provider
         )
@@ -898,13 +972,48 @@ class RevisionWorker(threading.Thread):
         }
 
 
+def revision_needs_resume(manifest: dict[str, Any]) -> bool:
+    """Return whether a saved revision still has provider work to retry."""
+    if manifest.get("status") != "completed":
+        return True
+    return bool(
+        manifest.get("operation") == OPERATION_TRANSLATION
+        and manifest.get("api_failure")
+        and any(
+            group.get("status") == "rejected" and group.get("fallback_reason")
+            for group in manifest.get("groups", [])
+        )
+    )
+
+
 def load_revision_for_resume(job_dir: Path) -> tuple[dict[str, Any], Any]:
     manifest = RevisionWorker._load_job(job_dir)
+    # Versions up to 0.16.3 labelled a provider outage as completed after saving
+    # an all-original fallback SRT. Present those jobs as resumable without
+    # rewriting their historical record until the user actually resumes them.
+    if revision_needs_resume(manifest) and manifest.get("status") == "completed":
+        manifest["status"] = "error"
+        manifest["resumable"] = True
     captions = load_captions(manifest["source"])
     pricing = manifest["pricing"]
+    # Historical usage keeps the rates saved in the manifest.  A new preview of
+    # the remaining groups uses reviewed current rates when the same model is
+    # still supported, so the user can see the present-day estimate before
+    # pressing Resume.
+    try:
+        current_input, current_output, _period = catalog_model_rates(
+            catalog_from_disk()[0],
+            str(manifest.get("provider", PROVIDER_OPENAI)),
+            str(manifest.get("model", "")),
+        )
+    except (OSError, ValueError, KeyError):
+        current_input = float(pricing["input_per_million"])
+        current_output = float(pricing["output_per_million"])
     estimated_groups = [dict(group) for group in manifest["groups"]]
     if manifest.get("operation") == OPERATION_TRANSLATION:
         for group in estimated_groups:
+            if group.get("status") == "rejected" and group.get("fallback_reason"):
+                group["status"] = "pending"
             if group.get("status") != "pending" or not group.get("response"):
                 continue
             response_path = job_dir / str(group["response"])
@@ -928,14 +1037,15 @@ def load_revision_for_resume(job_dir: Path) -> tuple[dict[str, Any], Any]:
     return manifest, estimate_revision(
         captions,
         estimated_groups,
-        float(pricing["input_per_million"]),
-        float(pricing["output_per_million"]),
+        current_input,
+        current_output,
         mode=str(manifest.get("revision_mode", REVISION_MODE_CONSERVATIVE)),
         operation=str(manifest.get("operation", OPERATION_REVISION)),
         model=str(manifest.get("model", default_model(
             str(manifest.get("revision_mode", REVISION_MODE_CONSERVATIVE)),
             str(manifest.get("operation", OPERATION_REVISION)),
         ))),
+        provider=str(manifest.get("provider", PROVIDER_OPENAI)),
         source_language=str(manifest.get("source_language", "en")),
         target_language=str(manifest.get("target_language", "en")),
         user_context=str(manifest.get("user_context", "")),

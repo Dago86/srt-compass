@@ -67,6 +67,55 @@ class RecentJobsTests(unittest.TestCase):
                 sum(item["name"] == "Registro non leggibile" for item in records), 1
             )
 
+    def test_legacy_completed_api_failure_is_presented_as_resumable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            jobs = root / "jobs"
+            revisions = root / "revisions"
+            job = jobs / "sample"
+            revision = revisions / "translation"
+            job.mkdir(parents=True)
+            revision.mkdir(parents=True)
+            (job / "job.json").write_text(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "video": "/tmp/video.mkv",
+                        "output": "/tmp/video.original.srt",
+                        "final_output": "/tmp/video.it.srt",
+                        "target_language": "it",
+                        "translation_job": str(revision),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (revision / "revision.json").write_text(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "operation": "translation",
+                        "completion_status": "completed_with_untranslated",
+                        "api_failure": "No route to host",
+                        "parent_job": str(job),
+                        "groups": [
+                            {
+                                "status": "rejected",
+                                "fallback_reason": "No route to host",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(recent_jobs, "JOBS_DIR", jobs),
+                patch.object(recent_jobs, "REVISION_JOBS_DIR", revisions),
+                patch.object(recent_jobs, "DOWNLOAD_JOBS_DIR", root / "downloads"),
+            ):
+                records = recent_jobs.list_recent_jobs()
+            self.assertEqual(records[0]["status"], "Traduzione da riprendere")
+            self.assertEqual(records[0]["progress"], "0/1")
+
 
 if __name__ == "__main__":
     unittest.main()

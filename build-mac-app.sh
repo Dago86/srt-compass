@@ -4,7 +4,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/srt-compass-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 DIST_DIR="$BUILD_DIR/dist"
-VERSION="${VERSION:-0.15.0}"
+VERSION="${VERSION:-0.16.4}"
 APP_PATH="$DIST_DIR/SRT Compass.app"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 MAC_ARCH="${MAC_ARCH:-$(uname -m)}"
@@ -42,6 +42,7 @@ PYTHON_BIN="python3"
   --exclude-module pandas --exclude-module matplotlib --exclude-module PIL \
   --additional-hooks-dir "$PROJECT_DIR/packaging-hooks" \
   --add-binary "$YTDLP_PATH:bin" --add-binary "$DENO_PATH:bin" \
+  --add-data "$PROJECT_DIR/src/video_sottotitoli/model_catalog.json:video_sottotitoli" \
   --add-data "$PROJECT_DIR/vendor/licenses:licenses" \
   --paths "$PROJECT_DIR/src" --distpath "$DIST_DIR" \
   --workpath "$BUILD_DIR/work" --specpath "$BUILD_DIR/spec" \

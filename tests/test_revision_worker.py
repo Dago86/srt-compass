@@ -8,11 +8,16 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from video_sottotitoli.revision import (
+    OPERATION_TRANSLATION,
     REVISION_MODE_LINGUISTIC,
     build_groups,
     source_fingerprint,
 )
-from video_sottotitoli.revision_worker import RevisionWorker
+from video_sottotitoli.revision_worker import (
+    RevisionWorker,
+    load_revision_for_resume,
+    revision_needs_resume,
+)
 
 SOURCE = """1
 00:40:00,000 --> 00:40:02,000
@@ -59,7 +64,7 @@ class RevisionWorkerTests(unittest.TestCase):
             manifest_path = next((root / "jobs").glob("*/revision.json"))
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["status"], "completed")
-            self.assertEqual(manifest["version"], 4)
+            self.assertEqual(manifest["version"], 5)
             self.assertEqual(manifest["validator_version"], 6)
             self.assertEqual(
                 manifest["result_counts"],
@@ -134,6 +139,75 @@ class RevisionWorkerTests(unittest.TestCase):
             self.assertEqual(manifest["groups"][0]["status"], "rejected")
             self.assertTrue(Path(manifest["issue_report"]).is_file())
             self.assertIn("hello world", output.read_text(encoding="utf-8"))
+
+    def test_translation_network_error_saves_partial_and_remains_resumable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, output = self._paths(root)
+            calls = 0
+            groups = [
+                {
+                    "start": 0,
+                    "end": 1,
+                    "status": "pending",
+                    "units": [{"id": 1, "start": 0, "end": 1}],
+                    "input_tokens_estimate": 100,
+                    "output_tokens_estimate": 50,
+                },
+                {
+                    "start": 1,
+                    "end": 2,
+                    "status": "pending",
+                    "units": [{"id": 2, "start": 1, "end": 2}],
+                    "input_tokens_estimate": 100,
+                    "output_tokens_estimate": 50,
+                },
+            ]
+
+            def request(_payload):
+                nonlocal calls
+                calls += 1
+                raise OSError(65, "No route to host")
+
+            with (
+                patch(
+                    "video_sottotitoli.revision_worker.REVISION_JOBS_DIR",
+                    root / "jobs",
+                ),
+                patch(
+                    "video_sottotitoli.revision_worker.build_groups",
+                    return_value=groups,
+                ),
+            ):
+                worker = RevisionWorker(
+                    str(source),
+                    str(output),
+                    "unused",
+                    request,
+                    mode=REVISION_MODE_LINGUISTIC,
+                    operation=OPERATION_TRANSLATION,
+                    source_language="en",
+                    target_language="it",
+                )
+                worker.run()
+
+            self.assertEqual(calls, 1)
+            job_dir = next((root / "jobs").iterdir())
+            manifest = json.loads(
+                (job_dir / "revision.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["status"], "error")
+            self.assertEqual(manifest["completion_status"], "partial_api_error")
+            self.assertTrue(manifest["resumable"])
+            self.assertTrue(revision_needs_resume(manifest))
+            self.assertEqual(
+                [len(group.get("attempts", [])) for group in manifest["groups"]],
+                [1, 0],
+            )
+            self.assertIn("hello world", output.read_text(encoding="utf-8"))
+            resumable, estimate = load_revision_for_resume(job_dir)
+            self.assertEqual(resumable["status"], "error")
+            self.assertGreater(estimate.cost_usd, 0)
 
     def test_unchanged_response_reports_zero_text_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

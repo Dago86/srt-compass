@@ -47,22 +47,26 @@ CHUNK_SECONDS = 10 * 60
 WHISPER_COST_PER_MINUTE_USD = 0.006
 MODEL_MINI = "gpt-4.1-mini-2025-04-14"
 MODEL_SOL = "gpt-6-sol"
+MODEL_SOL_LATEST = "gpt-6.1-sol"
 MODEL_SOL_LEGACY = "gpt-5.6-sol"
 PROVIDER_OPENAI = "openai"
 PROVIDER_DEEPSEEK = "deepseek"
 AI_PROVIDERS = (PROVIDER_OPENAI, PROVIDER_DEEPSEEK)
 DEEPSEEK_FLASH = "deepseek-flash"
 DEEPSEEK_PRO = "deepseek-v4-pro"
+# Compatibility constants only. New code reads the verified, updatable catalog.
 PROVIDER_MODELS = {
-    PROVIDER_OPENAI: (MODEL_MINI, MODEL_SOL_LEGACY, MODEL_SOL),
+    PROVIDER_OPENAI: (MODEL_MINI, MODEL_SOL_LEGACY, MODEL_SOL, MODEL_SOL_LATEST, "gpt-6-luna"),
     PROVIDER_DEEPSEEK: (DEEPSEEK_FLASH, DEEPSEEK_PRO),
 }
 MODEL_PRICING = {
     MODEL_MINI: {"input": 0.40, "output": 1.60},
     MODEL_SOL: {"input": 2.00, "output": 10.00},
     MODEL_SOL_LEGACY: {"input": 4.00, "output": 20.00},
-    DEEPSEEK_FLASH: {"input": 0.14, "output": 0.28},
-    DEEPSEEK_PRO: {"input": 0.435, "output": 0.87},
+    DEEPSEEK_FLASH: {"input": 0.30, "output": 1.20},
+    DEEPSEEK_PRO: {"input": 1.32, "output": 3.96},
+    MODEL_SOL_LATEST: {"input": 2.00, "output": 10.00},
+    "gpt-6-luna": {"input": 0.10, "output": 0.50},
 }
 REASONING_MODELS = {MODEL_SOL, MODEL_SOL_LEGACY}
 REVISION_MODEL = MODEL_MINI

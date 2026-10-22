@@ -16,7 +16,9 @@ from video_sottotitoli.gui import (
     TimeRangeScale,
     _download_progress_display,
 )
+from video_sottotitoli.i18n import tr
 from video_sottotitoli.models import MediaInfo
+from video_sottotitoli.revision import OPERATION_TRANSLATION
 
 
 class GuiResumeTests(unittest.TestCase):
@@ -205,11 +207,78 @@ class GuiResumeTests(unittest.TestCase):
                 "path": str(path), "media": media, "job_dir": temporary,
             }, worker)
             self.assertTrue(result)
-            app.video_var.set.assert_called_once_with(str(path.resolve()))
             loaded_media = app._receive_media.call_args.args[0]
             self.assertEqual(loaded_media.path, str(path.resolve()))
             dialog.destroy.assert_called_once()
             self.assertIsNone(dialog.worker)
+
+    def test_new_media_clears_every_result_from_previous_video(self) -> None:
+        summary_events: queue.Queue[object] = queue.Queue()
+        summary_events.put(object())
+        count_events: queue.Queue[object] = queue.Queue()
+        count_events.put(object())
+        variables = {
+            name: Mock() for name in (
+                "summary_checkbox_var", "summary_estimate_var", "summary_result_var",
+                "result_summary_var", "output_var", "activity_var",
+            )
+        }
+        buttons = {
+            name: Mock() for name in (
+                "open_result_button", "show_finder_button", "show_issues_button",
+                "open_summary_button", "output_path_button", "progress", "log_panel",
+            )
+        }
+        app = SimpleNamespace(
+            **variables, **buttons, _clear_translation_flow=Mock(),
+            summary_estimate_revision=4, summary_estimate_events=summary_events,
+            result_count_events=count_events, current_job_path=Path("/tmp/a/job.json"),
+            transcription_job_path=Path("/tmp/a"),
+            translation_job_path=Path("/tmp/a/translation"),
+            final_output_path=Path("/tmp/a.it.srt"),
+            result_report_path=Path("/tmp/a.problemi.txt"), job_resumable=True,
+            workflow_active=True, summary_requested=True,
+            summary_waiting_for_approval=True, summary_srt_path=Path("/tmp/a.it.srt"),
+            summary_output=Path("/tmp/a.scheda.txt"), summary_parent_job=Path("/tmp/a"),
+            summary_language="it", summary_interval=(10.0, 20.0),
+            _clear_activity_clock=Mock(),
+        )
+
+        App._clear_previous_media_result(app)
+
+        app._clear_translation_flow.assert_called_once_with()
+        self.assertEqual(app.summary_estimate_revision, 5)
+        self.assertTrue(summary_events.empty())
+        self.assertTrue(count_events.empty())
+        self.assertIsNone(app.current_job_path)
+        self.assertIsNone(app.transcription_job_path)
+        self.assertIsNone(app.translation_job_path)
+        self.assertIsNone(app.final_output_path)
+        self.assertIsNone(app.result_report_path)
+        self.assertIsNone(app.summary_output)
+        self.assertFalse(app.job_resumable)
+        self.assertFalse(app.workflow_active)
+        app.result_summary_var.set.assert_called_once_with(tr("main.result_pending"))
+        app.output_var.set.assert_called_once_with("")
+        app.log_panel.clear.assert_called_once_with()
+
+    def test_receiving_second_video_selects_its_media_and_output(self) -> None:
+        app = SimpleNamespace(
+            _clear_previous_media_result=Mock(), _set_busy=Mock(), media=None,
+            video_var=Mock(), track=Mock(), source_language_var=Mock(),
+            source_language=Mock(), output_var=Mock(), _reset_range=Mock(),
+            _set_workflow_controls=Mock(), _update_cost=Mock(), status_var=Mock(),
+            _enable_start=Mock(),
+        )
+        media = MediaInfo(path="/tmp/video-b.mkv", duration=30.0, audio_tracks=())
+
+        App._receive_media(app, media)
+
+        app._clear_previous_media_result.assert_called_once_with()
+        self.assertIs(app.media, media)
+        app.video_var.set.assert_called_once_with("/tmp/video-b.mkv")
+        app.output_var.set.assert_called_once_with("/tmp/video-b.srt")
+        app._set_workflow_controls.assert_called_once_with(True)
 
     def test_failed_media_load_keeps_download_dialog_open(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -419,6 +488,27 @@ class GuiResumeTests(unittest.TestCase):
             App._refresh_activity_clock(app)
         self.assertIn("Tempo totale 00:01:00", app.activity_var.set.call_args.args[0])
 
+    def test_starting_new_download_detaches_previous_video(self) -> None:
+        app = SimpleNamespace(
+            _clear_previous_media_result=Mock(), media=object(), video_var=Mock(),
+            track_var=Mock(), track=Mock(), start_time_var=Mock(), end_time_var=Mock(),
+            download_state="inattivo", cancel_requested=True,
+            _clear_activity_clock=Mock(), status_var=Mock(), activity_var=Mock(),
+            progress=Mock(), _set_busy=Mock(), _update_footer_state=Mock(),
+            _scroll_to_activity=Mock(), master=SimpleNamespace(after_idle=Mock()),
+        )
+
+        App._download_started(app)
+
+        app._clear_previous_media_result.assert_called_once_with()
+        self.assertIsNone(app.media)
+        app.video_var.set.assert_called_once_with("")
+        app.track.configure.assert_called_once_with(values=(), state="disabled")
+        app.start_time_var.set.assert_called_once_with("00:00:00")
+        app.end_time_var.set.assert_called_once_with("00:00:00")
+        self.assertEqual(app.download_state, "preparazione")
+        app._set_busy.assert_called_once_with(True)
+
     def test_video_controls_follow_media_and_work_state(self) -> None:
         controls = (
             "choose_video_button", "link_button", "choose_output_button",
@@ -427,6 +517,7 @@ class GuiResumeTests(unittest.TestCase):
             "track", "source_language", "target_language",
             "translation_model_combo", "translation_context_entry",
             "start_entry", "end_entry", "range_scale", "start_button",
+            "translate_srt_button",
         )
         app = SimpleNamespace(**{name: Mock() for name in controls})
         app.media = None
@@ -442,6 +533,12 @@ class GuiResumeTests(unittest.TestCase):
         app._update_output_path = Mock()
         app._enable_start = Mock()
         app._translation_options_needed = lambda: App._translation_options_needed(app)
+        app._standalone_tools_busy = lambda: App._standalone_tools_busy(app)
+        app.worker = None
+        app.translation_worker = None
+        app.summary_worker = None
+        app._active_download = lambda: None
+        app._busy = False
 
         App._set_workflow_controls(app, True)
         app.choose_video_button.configure.assert_called_with(state="normal")
@@ -450,6 +547,7 @@ class GuiResumeTests(unittest.TestCase):
         app.choose_output_button.configure.assert_called_with(state="disabled")
         app.start_entry.configure.assert_called_with(state="disabled")
         app.advanced_toggle.configure.assert_called_with(state="disabled")
+        app.translate_srt_button.configure.assert_called_with(state="normal")
 
         app.media = SimpleNamespace(audio_tracks=(object(),))
         app.video_var.get.return_value = "/tmp/video.mkv"
@@ -467,6 +565,42 @@ class GuiResumeTests(unittest.TestCase):
         App._set_workflow_controls(app, False)
         app.choose_video_button.configure.assert_called_with(state="disabled")
         app.translation_model_combo.configure.assert_called_with(state="disabled")
+
+        app.worker = object()
+        App._set_workflow_controls(app, False)
+        app.translate_srt_button.configure.assert_called_with(state="disabled")
+
+    def test_translate_existing_srt_does_not_require_video(self) -> None:
+        app = SimpleNamespace(
+            master=object(), _tools_available=Mock(return_value=True), media=None,
+        )
+        captions = [object()]
+        with (
+            patch(
+                "video_sottotitoli.gui.filedialog.askopenfilename",
+                return_value="/tmp/existing.srt",
+            ),
+            patch("video_sottotitoli.gui.load_captions", return_value=captions),
+            patch("video_sottotitoli.gui.suggest_source_language", return_value="ja"),
+            patch("video_sottotitoli.gui.RevisionDialog") as dialog,
+        ):
+            App.translate_existing_srt(app)
+        dialog.assert_called_once_with(
+            app.master, "/tmp/existing.srt", OPERATION_TRANSLATION, "ja", "it"
+        )
+
+    def test_srt_tools_ignore_idle_video_workflow_state(self) -> None:
+        app = SimpleNamespace(
+            worker=None, translation_worker=None, summary_worker=None,
+            workflow_active=True, _busy=False, _active_download=lambda: None,
+            status_var=Mock(),
+        )
+        app._standalone_tools_busy = lambda: App._standalone_tools_busy(app)
+        self.assertTrue(App._tools_available(app))
+
+        app.worker = object()
+        self.assertFalse(App._tools_available(app))
+        app.status_var.set.assert_called_once()
 
     def test_disabled_range_ignores_mouse_and_keyboard(self) -> None:
         scale = SimpleNamespace(cget=lambda _name: "disabled", focus_set=Mock())

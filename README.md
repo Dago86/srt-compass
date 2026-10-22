@@ -1,9 +1,9 @@
 # SRT Compass
 
 SRT Compass is a cross-platform desktop application for creating, translating and
-improving SRT subtitles. It accepts local videos or individual public video
-links, lets you select a time range, and keeps timestamps aligned to the
-original media timeline.
+improving SRT subtitles. It accepts local video, WebM and audio files, or
+individual public video links, lets you select a time range, and keeps
+timestamps aligned to the original media timeline.
 
 > **Status:** beta for macOS Apple Silicon, macOS Intel and Linux x86_64. Release
 > artifacts are ad-hoc signed macOS DMGs and an unsigned Linux AppImage. The
@@ -16,6 +16,8 @@ the primary system language, falling back to English. Change it from
 ## Features
 
 - Transcribe speech in English, Italian, Japanese and French.
+- Use local video or audio sources, including WebM, MP3, M4A, WAV, FLAC and
+  Ogg/Opus files.
 - Produce final subtitles in the original language, English, Italian or Japanese.
 - Select a start and end time while preserving absolute video timestamps.
 - Translate, contextually revise and improve the readability of existing SRT files.
@@ -25,6 +27,8 @@ the primary system language, falling back to English. Change it from
   estimated internal timing.
 - Optionally create a TXT brief with topics, a summary and web sources.
 - Resume saved transcription, translation and download jobs.
+- Compare reviewed OpenAI and DeepSeek models by indicative subtitle quality and
+  local cost estimate before starting a text operation.
 
 ## Requirements
 
@@ -71,7 +75,7 @@ Developers can copy `.env.example` to
 
 ## Basic workflow
 
-1. Choose a local video or select **From link…**.
+1. Choose a local video or audio file, or select **From link…**.
 2. Select the spoken language, final language and time range.
 3. Choose the SRT destination and review the estimate.
 4. Select **Generate transcription**. The original-language SRT is saved first.
@@ -80,6 +84,12 @@ Developers can copy `.env.example` to
    skipped.
 6. Review the issue report if the result contains warnings or untranslated
    parts.
+
+If you already have an SRT, select **Translate SRT…** on the initial screen or
+from **Tools**. This standalone workflow reads the subtitle file, estimates the
+text-provider cost locally and waits for **Start translation**. It does not
+require a video, audio track or time range and does not start audio
+transcription.
 
 Incomplete jobs remain in the platform data directory and are available from
 **Recent jobs**. macOS keeps the legacy
@@ -92,8 +102,26 @@ cleanup does not remove published media or SRT results.
 OpenAI and DeepSeek usage is billed to the respective API key owner. Estimates
 shown by the app are not spending limits. Audio transcription and the TXT web
 brief use OpenAI; subtitle translation and contextual revision can use either
-OpenAI or DeepSeek. Downloading a video does not start an AI request. See
-[PRIVACY.md](PRIVACY.md) for the data sent during each operation.
+OpenAI or DeepSeek. Downloading a video does not start an AI request.
+
+For subtitle operations, **Advanced options** offers a provider and a reviewed
+model. SRT Compass refreshes its model catalog in the background at most once
+every 24 hours; **Refresh models** checks again on demand. It also asks the
+selected providers which models the configured API keys can access. Newly found
+models remain unavailable until the project catalog records verified structured
+output support and pricing. The expected-quality label is an application-level,
+documented indication for the listed language pairs; it is not a guarantee that
+the subtitle text matches the audio. After a job, the app reports structural,
+numeric, language and readability checks without assigning a fabricated
+fidelity score.
+
+Costs are shown primarily in EUR using a dated European Central Bank reference
+rate, with the underlying USD amount available in the same detail. If that rate
+is unavailable, the app explains the fallback to USD. OpenAI and DeepSeek
+prices, including DeepSeek peak/off-peak bands, are stored with the job. A
+resume preserves historical costs and only recalculates the estimate of work
+that remains. See [PRIVACY.md](PRIVACY.md) for the data sent during each
+operation.
 
 Website support depends on yt-dlp and may change. Playlists, live streams, DRM,
 cookies and authenticated sources are outside the supported workflow. Not every
@@ -152,6 +180,7 @@ an ad-hoc local signature and are not notarized public binaries.
 - [Architecture](docs/architecture.md)
 - [Requirements](docs/requirements.md)
 - [Test plan](docs/test-plan.md)
+- [Model catalog and review policy](docs/model-catalog.md)
 - [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

@@ -2,6 +2,61 @@
 
 The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.16.4] - 2026-10-19
+
+- Fixed provider connection failures being presented as completed translations
+  even when every subtitle had fallen back to the source language.
+- Saved a usable partial SRT after an API outage while keeping the translation
+  job resumable from Recent jobs.
+- Stopped issuing further requests after the first provider connection failure
+  and stopped recording local fallbacks as received provider responses.
+- Made legacy all-original fallbacks caused by an API failure resumable without
+  modifying their historical usage records.
+
+## [0.16.3] - 2026-10-16
+
+- Added local audio files and WebM as first-class transcription sources.
+- Expanded the source picker to common audio formats including MP3, M4A, AAC,
+  WAV, FLAC, Ogg/Opus, AIFF, CAF, MKA and WMA.
+- Updated the English and Italian interface to describe local media files rather
+  than requiring a video, while preserving existing transcription jobs.
+- Added regression coverage for audio-only probing and local media filters.
+
+## [0.16.2] - 2026-10-16
+
+- Fixed the transition from a completed video job to a newly downloaded video:
+  the previous transcript, result, TXT brief, log and resume references are now
+  cleared before the new source can be transcribed.
+- Detached the previous media as soon as a new download starts, preventing an
+  interrupted transfer from leaving the old video available as the apparent
+  source of a new transcription.
+- Added regression coverage for the complete video A to downloaded video B
+  state transition.
+
+## [0.16.1] - 2026-10-13
+
+- Made existing-SRT translation directly accessible from the initial screen,
+  without loading a video first.
+- Kept standalone SRT tools available while an idle video workflow waits for
+  the next explicit action, while still blocking concurrent processing.
+- Added regression coverage proving that SRT preview and translation setup do
+  not depend on video, audio-track or interval state.
+
+## [0.16.0] - 2026-10-10
+
+- Added a reviewed model catalog that refreshes in the background at most once
+  every 24 hours and can be refreshed manually.
+- Added account-availability checks for OpenAI and DeepSeek models without
+  making a paid subtitle request.
+- Added an indicative, documented subtitle-quality tier and result checks for
+  structure, numbers, language and readability.
+- Added EUR-first estimates and recorded costs using a dated ECB exchange rate,
+  while retaining auditable USD details.
+- Saved model catalog metadata, effective parameters and historical prices in
+  new revision jobs so resume never silently changes a prior job.
+- Reset in-memory translation and resume references when loading a new video,
+  including a video returned from the download dialog.
+
 ## [0.15.0] - 2026-10-09
 
 - Added macOS Intel support alongside Apple Silicon.

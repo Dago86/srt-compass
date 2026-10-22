@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "catalog_version": "2026-10-10",
+  "verified_at": "2026-10-10",
+  "sources": {
+    "openai": "https://developers.openai.com/api/docs/models",
+    "deepseek": "https://api-docs.deepseek.com/quick_start/pricing/"
+  },
+  "providers": {
+    "openai": {
+      "models": [
+        {
+          "id": "gpt-4.1-mini-2025-04-14",
+          "name": "GPT-4.1 mini",
+          "quality": "economy",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": null,
+          "pricing": {"input": 0.4, "output": 1.6, "currency": "USD"}
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "GPT-5.6 Sol",
+          "quality": "balanced",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": "none",
+          "pricing": {"input": 4.0, "output": 20.0, "currency": "USD"}
+        },
+        {
+          "id": "gpt-6-sol",
+          "name": "GPT-6 Sol",
+          "quality": "advanced",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": "none",
+          "pricing": {"input": 2.0, "output": 10.0, "currency": "USD"}
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "name": "GPT-6.1 Sol",
+          "quality": "advanced",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": "low",
+          "reasoning_output_multiplier": 1.3,
+          "pricing": {"input": 2.0, "output": 10.0, "currency": "USD"}
+        },
+        {
+          "id": "gpt-6-luna",
+          "name": "GPT-6 Luna",
+          "quality": "economy",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": "none",
+          "pricing": {"input": 0.1, "output": 0.5, "currency": "USD"}
+        }
+      ]
+    },
+    "deepseek": {
+      "models": [
+        {
+          "id": "deepseek-flash",
+          "name": "DeepSeek Flash",
+          "quality": "balanced",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": "none",
+          "pricing": {"input": 0.3, "output": 1.2, "off_peak_input": 0.15, "off_peak_output": 0.6, "currency": "USD", "peak_utc": "Mon-Fri 01:00-04:00, 06:00-10:00; Chinese public holidays excluded"}
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "quality": "advanced",
+          "quality_evidence": {"languages": ["en", "it", "ja", "fr"], "assessed_at": "2026-10-10"},
+          "responses": true,
+          "structured_output": true,
+          "reasoning_effort": "none",
+          "pricing": {"input": 1.32, "output": 3.96, "off_peak_input": 0.66, "off_peak_output": 1.98, "currency": "USD", "peak_utc": "Mon-Fri 01:00-04:00, 06:00-10:00; Chinese public holidays excluded"}
+        }
+      ]
+    }
+  }
+}

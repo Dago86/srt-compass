@@ -14,10 +14,28 @@ class MediaError(RuntimeError):
     pass
 
 
-SUPPORTED_EXTENSIONS = {
-    ".mp4", ".mov", ".mkv", ".webm", ".m4a", ".mp3", ".ogg",
-    ".opus", ".wav", ".flac", ".mka",
-}
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".webm")
+AUDIO_EXTENSIONS = (
+    ".aac",
+    ".aif",
+    ".aiff",
+    ".caf",
+    ".flac",
+    ".m4a",
+    ".mka",
+    ".mp3",
+    ".oga",
+    ".ogg",
+    ".opus",
+    ".wav",
+    ".wma",
+)
+SUPPORTED_EXTENSIONS = frozenset((*VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS))
+
+
+def extension_pattern(extensions: tuple[str, ...]) -> str:
+    """Return a Tk file-dialog pattern for a group of media extensions."""
+    return " ".join(f"*{extension}" for extension in extensions)
 
 
 def _tool(name: str) -> str:
@@ -41,10 +59,10 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def probe_media(path: str | Path) -> MediaInfo:
-    video = Path(path).expanduser().resolve()
-    if not video.is_file():
-        raise MediaError("Il video selezionato non esiste più.")
-    if video.suffix.lower() not in SUPPORTED_EXTENSIONS:
+    media = Path(path).expanduser().resolve()
+    if not media.is_file():
+        raise MediaError("Il file multimediale selezionato non esiste più.")
+    if media.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise MediaError("Formato audio/video non supportato.")
 
     result = _run(
@@ -56,20 +74,20 @@ def probe_media(path: str | Path) -> MediaInfo:
             "format=duration:stream=index,codec_type,codec_name:stream_tags=language,title",
             "-of",
             "json",
-            str(video),
+            str(media),
         ]
     )
     if result.returncode:
         raise MediaError(
-            "Non riesco a leggere questo video. Potrebbe essere corrotto o protetto."
+            "Non riesco a leggere questo file. Potrebbe essere corrotto o protetto."
         )
     try:
         data = json.loads(result.stdout)
         duration = float(data["format"]["duration"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise MediaError("Non riesco a determinare la durata del video.") from exc
+        raise MediaError("Non riesco a determinare la durata del file.") from exc
     if not 0 < duration <= MAX_VIDEO_SECONDS:
-        raise MediaError("Il video deve durare più di zero e non oltre cinque ore.")
+        raise MediaError("Il file deve durare più di zero e non oltre cinque ore.")
 
     tracks: list[AudioTrack] = []
     for stream in data.get("streams", []):
@@ -86,8 +104,8 @@ def probe_media(path: str | Path) -> MediaInfo:
             )
         )
     if not tracks:
-        raise MediaError("Il video non contiene alcuna traccia audio.")
-    return MediaInfo(str(video), duration, tuple(tracks))
+        raise MediaError("Il file non contiene alcuna traccia audio.")
+    return MediaInfo(str(media), duration, tuple(tracks))
 
 
 def extract_audio_chunk(
@@ -126,7 +144,7 @@ def extract_audio_chunk(
         or destination.stat().st_size == 0
     ):
         destination.unlink(missing_ok=True)
-        raise MediaError("Non riesco a estrarre l'audio dal video selezionato.")
+        raise MediaError("Non riesco a preparare l'audio dal file selezionato.")
     if destination.stat().st_size > 25 * 1024 * 1024:
         destination.unlink(missing_ok=True)
         raise MediaError("Un blocco audio supera il limite di invio di 25 MB.")

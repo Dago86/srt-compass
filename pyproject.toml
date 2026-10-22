@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "srt-compass"
-version = "0.15.0"
+version = "0.16.4"
 description = "A cross-platform desktop app for transcribing, translating and improving SRT subtitles."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,6 +36,9 @@ Issues = "https://github.com/Dago86/srt-compass/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+video_sottotitoli = ["*.json"]
 
 [tool.ruff]
 line-length = 88

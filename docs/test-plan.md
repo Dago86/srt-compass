@@ -1,4 +1,4 @@
-# Test plan — SRT Compass 0.15.0
+# Test plan — SRT Compass 0.16.4
 
 Provider coverage includes simulated OpenAI and DeepSeek structured responses,
 separate usage and pricing, missing-key errors, interruption, resume and legacy
@@ -25,8 +25,34 @@ transcription in progress and a translation job with already completed groups.
   their manifests, storage directory or Keychain service.
 - Exercise download, transcription, translation and SRT tools with simulated
   workers in both interface languages.
+- From a fresh launch with no video, open **Translate SRT…**, load a simulated
+  SRT and verify that preview, local estimate and explicit start are independent
+  of media, audio-track and interval state. Keep the command available for an
+  idle video workflow and disable it while a worker is active.
+- Complete a transcription for video A, start a link download for video B and
+  verify that A is detached immediately. After B is loaded, its media path and
+  default SRT destination must be selected while A's result, TXT state, log and
+  resume references remain cleared.
+- Verify that the local picker exposes WebM and common audio formats. Probe
+  audio-only and WebM fixtures with no video stream, select their audio stream,
+  derive the default SRT name and preserve the selected interval timestamps.
 - Run the Linux x86_64 AppImage smoke test and the two architecture-specific
   macOS build checks; verify the bundled yt-dlp and Deno checksums.
+- Test catalog refresh, a valid cached catalog, malformed remote data and
+  offline fallback without making provider generation requests.
+- Test account-specific model lists, reviewed-model filtering, missing prices
+  and a retired selected model during resume.
+- Test immediate estimate changes for provider, model and context changes,
+  including DeepSeek peak and off-peak periods, reasoning reserves, missing
+  usage and a dated ECB EUR conversion fallback.
+- Test that the result distinguishes structural rejections, numeric warnings,
+  language warnings and readability warnings without claiming an audio-fidelity
+  score.
+- Simulate a provider connection failure in the first of several translation
+  groups. Verify that only one request is attempted, a partial SRT is saved, the
+  manifest remains resumable, remaining cost is estimated, and Recent jobs
+  offers **Resume translation**. Repeat with a legacy completed manifest carrying
+  `api_failure` and rejected fallback groups.
 
 ## Visual checks
 

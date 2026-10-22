@@ -233,10 +233,11 @@ class TranslationWorkerTests(unittest.TestCase):
             )
             self.assertEqual(calls, 1)
             self.assertGreater(len(manifest["groups"]), 1)
-            self.assertEqual(manifest["status"], "completed")
+            self.assertEqual(manifest["status"], "error")
             self.assertEqual(
-                manifest["completion_status"], "completed_with_untranslated"
+                manifest["completion_status"], "partial_api_error"
             )
+            self.assertTrue(manifest["resumable"])
             self.assertEqual(manifest["result_counts"]["rejected"], 36)
             self.assertTrue(all(f"Frase originale {i}" in text for i in range(1, 37)))
             self.assertTrue(Path(manifest["issue_report"]).is_file())

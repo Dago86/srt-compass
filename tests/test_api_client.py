@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from video_sottotitoli.api_client import post_transcription
+from video_sottotitoli.api_client import list_provider_models, post_transcription
 
 
 class TranscriptionRequestTests(unittest.TestCase):
@@ -36,6 +36,21 @@ class TranscriptionRequestTests(unittest.TestCase):
                 post_transcription("test-key", audio, "auto")
 
         self.assertNotIn(b'name="language"', request_mock.call_args.args[0].data)
+
+    def test_model_discovery_is_a_get_request_without_generation_payload(self) -> None:
+        with patch(
+            "video_sottotitoli.api_client._request",
+            return_value={"data": [{"id": "gpt-6.1-sol"}, {"id": "other"}]},
+        ) as request_mock:
+            self.assertEqual(
+                list_provider_models("test-key", "openai"),
+                ["gpt-6.1-sol", "other"],
+            )
+
+        request = request_mock.call_args.args[0]
+        self.assertEqual(request.method, "GET")
+        self.assertTrue(request.full_url.endswith("/models"))
+        self.assertIsNone(request.data)
 
 
 if __name__ == "__main__":

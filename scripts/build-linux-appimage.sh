@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.15.0}"
+VERSION="${VERSION:-0.16.4}"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/srt-compass-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 DIST_DIR="$BUILD_DIR/dist"
@@ -18,6 +18,7 @@ export PYINSTALLER_CONFIG_DIR="$BUILD_DIR/pyinstaller-cache"
   --additional-hooks-dir "$PROJECT_DIR/packaging-hooks" \
   --add-binary "$VENDOR_DIR/yt-dlp_linux:bin" \
   --add-binary "$VENDOR_DIR/deno:bin" \
+  --add-data "$PROJECT_DIR/src/video_sottotitoli/model_catalog.json:video_sottotitoli" \
   --add-data "$PROJECT_DIR/vendor/licenses:licenses" \
   --paths "$PROJECT_DIR/src" --distpath "$DIST_DIR" \
   --workpath "$BUILD_DIR/work" --specpath "$BUILD_DIR/spec" \

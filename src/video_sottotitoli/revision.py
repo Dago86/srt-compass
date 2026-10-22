@@ -9,7 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import LANGUAGE_NAMES, LANGUAGES, MODEL_MINI, MODEL_PRICING, MODEL_SOL
+from .config import (
+    LANGUAGE_NAMES,
+    LANGUAGES,
+    MODEL_MINI,
+    MODEL_PRICING,
+    MODEL_SOL,
+    PROVIDER_OPENAI,
+)
+from .model_catalog import CatalogError, catalog_from_disk
+from .model_catalog import model_rates as catalog_model_rates
 from .models import Caption
 from .readability import grapheme_count
 from .srt import join_caption_lines, render_srt
@@ -119,7 +128,9 @@ def estimate_tokens(text: str, model: str = MODEL_MINI) -> int:
         import tiktoken
 
         return max(1, len(tiktoken.encoding_for_model(model).encode(text)))
-    except (ImportError, KeyError):
+    # tiktoken may lazily download an encoding the first time it is used. A
+    # local estimate must remain local when that download is unavailable.
+    except Exception:  # noqa: BLE001 - fall back to the documented approximation
         byte_estimate = math.ceil(len(text.encode("utf-8")) / 3.7)
         word_estimate = math.ceil(len(text.split()) * 1.35)
         return max(1, byte_estimate, word_estimate)
@@ -131,7 +142,7 @@ def has_exact_tokenizer(model: str) -> bool:
 
         tiktoken.encoding_for_model(model)
         return True
-    except (ImportError, KeyError):
+    except Exception:  # noqa: BLE001 - exact tokenization is optional
         return False
 
 
@@ -141,12 +152,20 @@ def normalize_revision_mode(mode: str) -> str:
     return mode
 
 
-def model_rates(model: str) -> tuple[float, float]:
+def model_rates(model: str, provider: str = PROVIDER_OPENAI) -> tuple[float, float]:
+    """Return current reviewed rates; retain legacy rates for saved old jobs."""
     try:
-        pricing = MODEL_PRICING[model]
-    except KeyError as exc:
-        raise ValueError("Modello non supportato.") from exc
-    return float(pricing["input"]), float(pricing["output"])
+        catalog, _cached = catalog_from_disk()
+        input_rate, output_rate, _period = catalog_model_rates(catalog, provider, model)
+        return input_rate, output_rate
+    except (CatalogError, OSError, ValueError):
+        # A completed or interrupted legacy job must remain resumable even when
+        # its original model was retired from the current catalog.
+        try:
+            pricing = MODEL_PRICING[model]
+        except KeyError as exc:
+            raise ValueError("Modello non verificato o non supportato.") from exc
+        return float(pricing["input"]), float(pricing["output"])
 
 
 def default_model(mode: str, operation: str = OPERATION_REVISION) -> str:
@@ -292,7 +311,7 @@ def estimate_revision(
     mode: str = REVISION_MODE_CONSERVATIVE,
     operation: str = OPERATION_REVISION, model: str | None = None,
     source_language: str = "en", target_language: str = "en",
-    user_context: str = "",
+    user_context: str = "", provider: str = PROVIDER_OPENAI,
 ) -> RevisionEstimate:
     model = model or default_model(mode, operation)
     groups = groups if groups is not None else build_groups(
@@ -302,7 +321,19 @@ def estimate_revision(
     pending = [group for group in groups if group.get("status") == "pending"]
     input_tokens = sum(int(group["input_tokens_estimate"]) for group in pending)
     output_tokens = sum(int(group["output_tokens_estimate"]) for group in pending)
-    rates = model_rates(model)
+    try:
+        catalog, _cached = catalog_from_disk()
+        metadata = next(
+            (item for item in catalog.get("providers", {}).get(provider, {}).get("models", [])
+             if item.get("id") == model),
+            {},
+        )
+        multiplier = float(metadata.get("reasoning_output_multiplier", 1.0))
+        if math.isfinite(multiplier) and multiplier > 1:
+            output_tokens = math.ceil(output_tokens * multiplier)
+    except (CatalogError, OSError, TypeError, ValueError):
+        pass
+    rates = model_rates(model, provider)
     return RevisionEstimate(
         len(captions), len(pending), input_tokens, output_tokens,
         token_cost(input_tokens, output_tokens,

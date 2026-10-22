@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import DOWNLOAD_JOBS_DIR, JOBS_DIR, REVISION_JOBS_DIR
+from .revision_worker import revision_needs_resume
 
 
 def _download_is_active(job_dir: Path) -> bool:
@@ -134,14 +135,18 @@ def list_recent_jobs(limit: int = 50) -> list[dict[str, Any]]:
                     )
                     groups_total = len(translation_groups)
                     completion = translation.get("completion_status")
-                    if translation.get("status") == "completed":
+                    if revision_needs_resume(translation):
+                        completed = sum(
+                            group.get("status") == "completed"
+                            for group in translation_groups
+                        )
+                        status = "Traduzione da riprendere"
+                    elif translation.get("status") == "completed":
                         status = {
                             "completed_with_warnings": "Completato con avvisi",
                             "completed_with_untranslated":
                                 "Completato con parti non tradotte",
                         }.get(completion, "Completato")
-                    elif translation.get("status") in {"error", "cancelled"}:
-                        status = "Traduzione da riprendere"
                     else:
                         status = "Traduzione in corso"
                     usage = [group.get("usage") or {} for group in translation_groups]

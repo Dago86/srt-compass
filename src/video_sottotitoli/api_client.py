@@ -33,6 +33,26 @@ def _request(request: Request, timeout: float = 300) -> dict[str, Any]:
         raise RemoteAPIError(str(exc.reason)) from exc
 
 
+def list_provider_models(
+    api_key: str, provider: str = "openai", *, timeout: float = 10.0,
+) -> list[str]:
+    """Return model ids available to this key without creating a paid request."""
+    root = DEEPSEEK_API_ROOT if provider == "deepseek" else API_ROOT
+    request = Request(
+        root + "/models",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "srt-compass/0.16.4",
+        },
+        method="GET",
+    )
+    result = _request(request, timeout=timeout)
+    items = result.get("data", [])
+    if not isinstance(items, list):
+        raise RemoteAPIError("Il provider ha restituito un catalogo modelli non valido.")
+    return [str(item["id"]) for item in items if isinstance(item, dict) and item.get("id")]
+
+
 def post_json(api_key: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return post_provider_json(api_key, path, payload, "openai")
 
@@ -49,7 +69,7 @@ def post_provider_json(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "srt-compass/0.15.0",
+            "User-Agent": "srt-compass/0.16.4",
         },
         method="POST",
     )
@@ -103,7 +123,7 @@ def post_transcription(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "srt-compass/0.15.0",
+            "User-Agent": "srt-compass/0.16.4",
         },
         method="POST",
     )

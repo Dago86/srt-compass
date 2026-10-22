@@ -13,6 +13,11 @@ features send data to external services only after an explicit user action.
   `.env.local` fallback is for development only.
 - OpenAI and DeepSeek keys are stored under separate accounts in the macOS
   Keychain or Linux Secret Service.
+- At most once every 24 hours, or when **Refresh models** is used, the app may
+  download the public SRT Compass model catalog, query the providers' `/models`
+  endpoints using the configured keys, and retrieve the public ECB USD/EUR
+  reference rate. These actions do not send audio or subtitle text and do not
+  start a paid translation or revision.
 
 ## Link downloads
 
