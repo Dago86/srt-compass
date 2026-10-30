@@ -75,21 +75,23 @@ Developers can copy `.env.example` to
 
 ## Basic workflow
 
-1. Choose a local video or audio file, or select **From link…**.
-2. Select the spoken language, final language and time range.
-3. Choose the SRT destination and review the estimate.
-4. Select **Generate transcription**. The original-language SRT is saved first.
-5. Review the local translation estimate and select **Start translation** when
-   you want the final-language SRT. If you selected **Original**, this step is
-   skipped.
-6. Review the issue report if the result contains warnings or untranslated
-   parts.
+The opening screen offers two paths: **Create subtitles from audio or video**
+and **Work on an existing SRT**. Recent jobs are available separately.
 
-If you already have an SRT, select **Translate SRT…** on the initial screen or
-from **Tools**. This standalone workflow reads the subtitle file, estimates the
-text-provider cost locally and waits for **Start translation**. It does not
-require a video, audio track or time range and does not start audio
-transcription.
+1. For new subtitles, choose a local video/audio file or select **From link…**.
+2. After the source is ready, choose the spoken language, time range and SRT
+   destination. Review the audio estimate next to **Generate transcription**.
+3. Generate the original-language SRT. Translation does not start automatically.
+4. Choose the final language and review the local translation estimate. Select
+   **Start translation** only if you want a translated SRT; otherwise use the
+   original transcription.
+5. Open the result and review its issue report if it contains warnings or
+   untranslated parts. A requested TXT brief has its own estimate and start.
+
+If you already have an SRT, choose **Work on an existing SRT**, then
+**Translate SRT…**, **Improve subtitles…** or **Improve SRT readability…**.
+Translation and revision estimate the text-provider cost locally and wait for
+an explicit start. They require no video, audio track or time range.
 
 Incomplete jobs remain in the platform data directory and are available from
 **Recent jobs**. macOS keeps the legacy

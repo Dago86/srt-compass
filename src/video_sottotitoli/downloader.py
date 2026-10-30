@@ -353,7 +353,12 @@ def parse_info(raw: dict[str, Any]) -> dict[str, Any]:
         format_id = str(item.get("format_id") or "")
         if not format_id:
             continue
-        audio = item.get("acodec") not in {None, "none"}
+        # Some HLS extractors (including Dailymotion) identify an audio-only
+        # stream but leave its codec unknown. yt-dlp still exposes audio_ext.
+        audio = item.get("acodec") not in {None, "none"} or (
+            item.get("acodec") is None
+            and item.get("audio_ext") not in {None, "none"}
+        )
         video = item.get("vcodec") not in {None, "none"}
         language = str(item.get("language") or "").strip()
         if language and not re.fullmatch(r"[A-Za-z0-9_-]{1,24}", language):
@@ -434,9 +439,11 @@ def validate_selected_format(
                 not audio_language or item.get("language") == audio_language
             ) for item in formats
         ):
-            raise DownloadError(
-                "La traccia audio selezionata non è più disponibile. Scegline un’altra e analizza di nuovo."
-            )
+            if audio_language:
+                raise DownloadError(
+                    "La traccia audio selezionata non è disponibile. Scegline un’altra e analizza di nuovo."
+                )
+            raise DownloadError("Il sito non offre una traccia audio scaricabile per questo video.")
         return
     limit = {"720p": 720, "1080p": 1080}.get(quality)
     eligible_video = [
@@ -454,8 +461,9 @@ def validate_selected_format(
     )
     if not combined and not (eligible_video and eligible_audio):
         raise DownloadError(
-            "Il formato salvato non è più disponibile sul sito. Scegli una qualità diversa, "
-            "poi avvia un nuovo download per non riutilizzare parziali incompatibili."
+            "Per questa scelta non trovo una combinazione video e audio disponibile. "
+            "Prova un’altra qualità. Se stai riprendendo un download con parziali, "
+            "avvia un nuovo lavoro prima di cambiare formato."
         )
 
 

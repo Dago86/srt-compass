@@ -262,6 +262,28 @@ class GuiResumeTests(unittest.TestCase):
         app.output_var.set.assert_called_once_with("")
         app.log_panel.clear.assert_called_once_with()
 
+    def test_replacing_media_resets_hidden_final_language_and_context(self) -> None:
+        app = SimpleNamespace(
+            _clear_translation_flow=Mock(),
+            summary_estimate_revision=0,
+            summary_estimate_events=queue.Queue(),
+            result_count_events=queue.Queue(),
+            target_language=Mock(), target_language_var=Mock(),
+            translation_target_var=Mock(), translation_context_var=Mock(),
+            summary_checkbox_var=Mock(), summary_estimate_var=Mock(),
+            summary_result_var=Mock(), result_summary_var=Mock(),
+            output_var=Mock(), open_result_button=Mock(),
+            show_finder_button=Mock(), show_issues_button=Mock(),
+            open_summary_button=Mock(), output_path_button=Mock(),
+            progress=Mock(), log_panel=Mock(), activity_var=Mock(),
+            _clear_activity_clock=Mock(),
+        )
+        App._clear_previous_media_result(app)
+        app.target_language.set.assert_called_once_with(tr("language.original"))
+        app.target_language_var.set.assert_called_once_with("original")
+        app.translation_target_var.set.assert_called_once_with("original")
+        app.translation_context_var.set.assert_called_once_with("")
+
     def test_receiving_second_video_selects_its_media_and_output(self) -> None:
         app = SimpleNamespace(
             _clear_previous_media_result=Mock(), _set_busy=Mock(), media=None,

@@ -42,7 +42,7 @@ def list_provider_models(
         root + "/models",
         headers={
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "srt-compass/0.16.4",
+            "User-Agent": "srt-compass/0.17.0",
         },
         method="GET",
     )
@@ -69,7 +69,7 @@ def post_provider_json(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "srt-compass/0.16.4",
+            "User-Agent": "srt-compass/0.17.0",
         },
         method="POST",
     )
@@ -123,7 +123,7 @@ def post_transcription(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "srt-compass/0.16.4",
+            "User-Agent": "srt-compass/0.17.0",
         },
         method="POST",
     )

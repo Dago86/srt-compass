@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.16.4}"
+VERSION="${VERSION:-0.17.0}"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/srt-compass-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 DIST_DIR="$BUILD_DIR/dist"

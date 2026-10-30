@@ -448,6 +448,29 @@ class DownloadAndEventTests(unittest.TestCase):
                 "720p", None,
             )
 
+    def test_dailymotion_audio_with_unknown_codec_is_downloadable(self) -> None:
+        metadata = parse_info({
+            "id": "example", "extractor_key": "Dailymotion", "duration": 1243,
+            "formats": [
+                {
+                    "format_id": "hls-audio-English", "ext": "mp4",
+                    "vcodec": "none", "acodec": None, "audio_ext": "mp4",
+                    "video_ext": "none", "language": "eng",
+                },
+                {
+                    "format_id": "hls-720", "ext": "mp4", "height": 720,
+                    "vcodec": "avc1.64001f", "acodec": "none",
+                    "audio_ext": "none", "video_ext": "mp4",
+                },
+            ],
+        })
+        self.assertEqual(metadata["audio_languages"], ["eng"])
+        self.assertTrue(metadata["formats"][0]["audio"])
+        for quality in ("1080p", "720p", "best", "audio"):
+            with self.subTest(quality=quality):
+                validate_selected_format(metadata, quality)
+        validate_selected_format(metadata, "audio", "eng")
+
     def test_url_safety_and_format_selectors(self) -> None:
         self.assertEqual(validate_page_url(" https://example.test/a "), "https://example.test/a")
         for url in ("file:///tmp/a", "https://user:pass@example.test/a"):

@@ -2,6 +2,21 @@
 
 The project follows [Semantic Versioning](https://semver.org/).
 
+## [0.17.0] - 2026-10-30
+
+- Reorganized the main window around creating subtitles from media and working
+  on an existing SRT, with one visible page and a fixed primary action.
+- Moved the final-language decision and translation estimate after the saved
+  transcription; choosing a language does not start a paid request.
+- Put the relevant estimate next to the current action and made the original
+  transcript directly accessible at the translation step.
+- Reduced competing cleanup controls in Recent jobs and widened the status
+  column; storage actions have their own secondary area.
+- Added bilingual guided labels and regression coverage for the new decision
+  point and collision-safe output names.
+- Recognized Dailymotion audio-only HLS tracks when the codec is unspecified,
+  preventing a false format-unavailable error on a new download.
+
 ## [0.16.4] - 2026-10-19
 
 - Fixed provider connection failures being presented as completed translations

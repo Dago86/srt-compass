@@ -1009,15 +1009,14 @@ class RecentJobsDialog(tk.Toplevel):
         ).grid(
             row=0, column=0, sticky="w", pady=(0, 10)
         )
-        columns = ("kind", "name", "status", "progress", "cost", "modified")
+        columns = ("kind", "name", "status", "progress", "modified")
         self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=12)
         for column, title, width in (
-            ("kind", tr("dialog.operation"), 115),
-            ("name", tr("dialog.source"), 230),
-            ("status", tr("dialog.status"), 90),
-            ("progress", tr("dialog.progress"), 100),
-            ("cost", tr("dialog.cost"), 80),
-            ("modified", tr("dialog.modified"), 100),
+            ("kind", tr("dialog.operation"), 100),
+            ("name", tr("dialog.source"), 235),
+            ("status", tr("dialog.status"), 160),
+            ("progress", tr("dialog.progress"), 85),
+            ("modified", tr("dialog.modified"), 105),
         ):
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, stretch=column == "name")
@@ -1029,30 +1028,41 @@ class RecentJobsDialog(tk.Toplevel):
         ttk.Label(frame, textvariable=self.summary, wraplength=650).grid(
             row=2, column=0, sticky="w", pady=(8, 12)
         )
-        actions = ttk.Frame(frame)
-        actions.grid(row=3, column=0, sticky="e")
-        ttk.Button(actions, text=tr("dialog.refresh"), command=self.refresh).pack(side="left", padx=6)
+        storage_actions = ttk.Frame(frame)
+        storage_actions.grid(row=3, column=0, sticky="w", pady=(0, 10))
         self.cleanup_button = ttk.Button(
-            actions, text=tr("dialog.cleanup_selected"), command=self.cleanup_temporary,
+            storage_actions, text=tr("dialog.cleanup_selected"), command=self.cleanup_temporary,
             state="disabled",
         )
-        self.cleanup_button.pack(side="left", padx=6)
         self.cleanup_all_button = ttk.Button(
-            actions, text=tr("dialog.cleanup_all"), command=self.cleanup_all_temporary
+            storage_actions, text=tr("dialog.cleanup_all"), command=self.cleanup_all_temporary
         )
-        self.cleanup_all_button.pack(side="left", padx=6)
+        if storage_only:
+            self.cleanup_button.pack(side="left", padx=(0, 8))
+            self.cleanup_all_button.pack(side="left")
+        else:
+            ttk.Button(
+                storage_actions, text=tr("menu.storage"),
+                command=self.app.open_storage_dialog,
+            ).pack(side="left")
+        actions = ttk.Frame(frame)
+        actions.grid(row=4, column=0, sticky="ew")
+        actions.columnconfigure(0, weight=1)
+        ttk.Button(actions, text=tr("dialog.refresh"), command=self.refresh).grid(row=0, column=0, sticky="w")
         self.open_record_button = ttk.Button(
             actions, text=tr("dialog.open_record"), command=self.open_record,
             state="disabled",
         )
         if not storage_only:
-            self.open_record_button.pack(side="left", padx=6)
+            self.open_record_button.grid(row=0, column=1, padx=(8, 0))
         self.resume_button = ttk.Button(
             actions, text=tr("main.resume"), command=self.resume, state="disabled"
         )
+        ttk.Button(actions, text=tr("dialog.close"), command=self.destroy).grid(
+            row=0, column=2, padx=(8, 0)
+        )
         if not storage_only:
-            self.resume_button.pack(side="left", padx=6)
-        ttk.Button(actions, text=tr("dialog.close"), command=self.destroy).pack(side="left", padx=6)
+            self.resume_button.grid(row=0, column=3, padx=(8, 0))
         self.tree.bind("<<TreeviewSelect>>", self._selection_changed)
         self.tree.bind("<Double-1>", lambda _event: self.resume())
         self.after(100, self._poll)
@@ -1138,10 +1148,16 @@ class RecentJobsDialog(tk.Toplevel):
             self.tree.delete(*self.tree.get_children())
             for index, record in enumerate(records):
                 item = str(index)
+                if record.get("cost_usd") is not None:
+                    record["cost"] = self.app._format_cost(float(record["cost_usd"]))
+                    if float(record.get("remaining_cost_usd") or 0) > 0:
+                        record["cost"] += " · ~" + self.app._format_cost(
+                            float(record["remaining_cost_usd"])
+                        )
                 self.rows[item] = record
                 self.tree.insert("", "end", iid=item, values=(
                     record["kind"], record["name"], record["status"],
-                    record["progress"], record["cost"], record["modified_label"],
+                    record["progress"], record["modified_label"],
                 ))
             total_bytes = sum(record.get("temporary_bytes", 0) for record in records)
             if self.storage_only:
@@ -1190,7 +1206,10 @@ class RecentJobsDialog(tk.Toplevel):
             }.get(record["kind"], "lavoro")
             if record["kind"] == "Trascrizione" and "Traduzione" in record["status"]:
                 operation = "traduzione"
-            self.resume_button.configure(text=f"Riprendi {operation}")
+            self.resume_button.configure(
+                text=(tr("guided.continue") if record["status"] == "Trascrizione pronta"
+                      else f"Riprendi {operation}")
+            )
         if hasattr(self, "open_record_button"):
             self.open_record_button.configure(
                 state="normal" if record else "disabled"
@@ -2147,7 +2166,14 @@ class App(ttk.Frame):
         self.cancel_requested = False
         self.job_resumable = False
         self.download_dialog: DownloadDialog | None = None
+        self.active_revision_dialog: RevisionDialog | None = None
         self.download_state = "inattivo"
+        self.guided_route = "home"
+        self.guided_page = "home"
+        self.transcription_ready = False
+        self.phase_var = tk.StringVar(value="")
+        self.decision_cost_var = tk.StringVar(value="")
+        self.result_cost_var = tk.StringVar(value="")
         self._workflow_controls_enabled = True
         self._build_v08()
         self.video_var.trace_add("write", self._update_source_path)
@@ -2202,12 +2228,64 @@ class App(ttk.Frame):
         ttk.Label(header, textvariable=self.work_summary_var, wraplength=680).grid(
             row=1, column=0, sticky="w", pady=(2, 0)
         )
+        ttk.Label(header, textvariable=self.phase_var, wraplength=680).grid(
+            row=2, column=0, sticky="w", pady=(6, 0)
+        )
         ttk.Button(
             header, text=tr("menu.recent_jobs"), command=self.open_recent_jobs
         ).grid(row=0, column=1, rowspan=2, sticky="e")
 
+        self.home_frame = ttk.Frame(layout, padding=16)
+        self.home_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.home_frame.columnconfigure(0, weight=1)
+        ttk.Label(
+            self.home_frame, text=tr("guided.home.title"),
+            font=("TkDefaultFont", 16, "bold"),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 16))
+        ttk.Label(
+            self.home_frame, text=tr("guided.media.title"),
+            font=("TkDefaultFont", 13, "bold"),
+        ).grid(row=1, column=0, sticky="w")
+        ttk.Label(
+            self.home_frame, text=tr("guided.media.description"), wraplength=690,
+        ).grid(row=2, column=0, sticky="w", pady=(2, 18))
+        ttk.Label(
+            self.home_frame, text=tr("guided.srt.title"),
+            font=("TkDefaultFont", 13, "bold"),
+        ).grid(row=3, column=0, sticky="w")
+        ttk.Label(
+            self.home_frame, text=tr("guided.srt.description"), wraplength=690,
+        ).grid(row=4, column=0, sticky="w", pady=(2, 6))
+        self.srt_home_button = ttk.Button(
+            self.home_frame, text=tr("guided.srt.title"), command=self._show_srt_tools
+        )
+        self.srt_home_button.grid(row=5, column=0, sticky="w")
+
+        self.srt_tools_frame = ttk.LabelFrame(
+            layout, text=tr("guided.srt.title"), padding=16
+        )
+        self.srt_tools_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        ttk.Label(
+            self.srt_tools_frame, text=tr("guided.srt.choose"), wraplength=690
+        ).pack(anchor="w", pady=(0, 12))
+        srt_actions = ttk.Frame(self.srt_tools_frame)
+        srt_actions.pack(anchor="w")
+        self.translate_srt_button = ttk.Button(
+            srt_actions, text=tr("menu.translate_srt"), command=self.translate_existing_srt
+        )
+        self.translate_srt_button.pack(side="left")
+        self.revise_srt_button = ttk.Button(
+            srt_actions, text=tr("menu.improve_srt"), command=self.improve_existing_srt
+        )
+        self.revise_srt_button.pack(side="left", padx=(8, 0))
+        self.readability_srt_button = ttk.Button(
+            srt_actions, text=tr("menu.readability"), command=self.format_existing_srt
+        )
+        self.readability_srt_button.pack(side="left", padx=(8, 0))
+
         source = ttk.LabelFrame(layout, text=tr("main.source"), padding=12)
-        source.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.source_frame = source
+        source.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         source.columnconfigure(1, weight=1)
         self.video_entry = ttk.Entry(source, textvariable=self.video_display_var, state="readonly")
         self.video_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
@@ -2227,10 +2305,12 @@ class App(ttk.Frame):
             source, text=tr("main.copy_path"), command=self._copy_source_path, state="disabled"
         )
         self.copy_source_path_button.grid(row=1, column=3, sticky="e", pady=(4, 0))
-        ttk.Label(source, text=tr("main.audio_track")).grid(row=2, column=0, sticky="w", pady=(9, 0))
+        self.track_label = ttk.Label(source, text=tr("main.audio_track"))
+        self.track_label.grid(row=2, column=0, sticky="w", pady=(9, 0))
         self.track = ttk.Combobox(source, textvariable=self.track_var, state="disabled")
         self.track.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(9, 0))
         speech_row = ttk.Frame(source)
+        self.speech_row = speech_row
         speech_row.grid(row=3, column=0, columnspan=4, sticky="w", pady=(9, 0))
         ttk.Label(speech_row, text=tr("main.spoken_language")).pack(side="left")
         self.source_language = ttk.Combobox(
@@ -2243,30 +2323,22 @@ class App(ttk.Frame):
         HelpButton(
             speech_row, tr("help.spoken.title"), tr("help.spoken.body"),
         ).pack(side="left")
-        srt_row = ttk.Frame(source)
-        srt_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
-        srt_row.columnconfigure(0, weight=1)
-        ttk.Label(srt_row, text=tr("main.existing_srt"), wraplength=610).grid(
-            row=0, column=0, sticky="w"
-        )
-        self.translate_srt_button = ttk.Button(
-            srt_row, text=tr("menu.translate_srt"), command=self.translate_existing_srt
-        )
-        self.translate_srt_button.grid(row=0, column=1, sticky="e", padx=(10, 0))
         self.source_hint_var_label = ttk.Label(
             source, textvariable=self.source_hint_var, wraplength=760
         )
         self.source_hint_var_label.grid(
-            row=5, column=0, columnspan=4, sticky="w", pady=(7, 0)
+            row=4, column=0, columnspan=4, sticky="w", pady=(7, 0)
         )
 
         final = ttk.LabelFrame(layout, text=tr("main.final_subtitles"), padding=12)
-        final.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        self.final_frame = final
+        final.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         final.columnconfigure(1, weight=1)
         ttk.Label(final, textvariable=self.final_hint_var, wraplength=760).grid(
             row=9, column=0, columnspan=3, sticky="w", pady=(6, 0)
         )
         target_row = ttk.Frame(final)
+        self.target_row = target_row
         target_row.grid(row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(target_row, text=tr("main.final_language")).pack(side="left")
         self.target_language = ttk.Combobox(
@@ -2279,8 +2351,10 @@ class App(ttk.Frame):
         HelpButton(
             target_row, tr("help.final.title"), tr("help.final.body"),
         ).pack(side="left")
-        ttk.Label(final, text=tr("main.range")).grid(row=1, column=0, sticky="nw", pady=(12, 0))
+        self.range_label = ttk.Label(final, text=tr("main.range"))
+        self.range_label.grid(row=1, column=0, sticky="nw", pady=(12, 0))
         range_frame = ttk.Frame(final)
+        self.range_frame = range_frame
         range_frame.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=(12, 0))
         range_frame.columnconfigure(1, weight=1)
         range_frame.columnconfigure(3, weight=1)
@@ -2302,7 +2376,8 @@ class App(ttk.Frame):
         ttk.Label(
             range_frame, text=tr("main.range_hint"),
         ).grid(row=2, column=1, columnspan=4, sticky="w", pady=(3, 0))
-        ttk.Label(final, text=tr("main.save_srt")).grid(row=2, column=0, sticky="w", pady=(12, 0))
+        self.output_label = ttk.Label(final, text=tr("main.save_srt"))
+        self.output_label.grid(row=2, column=0, sticky="w", pady=(12, 0))
         self.output_entry = ttk.Entry(
             final, textvariable=self.output_display_var, state="readonly"
         )
@@ -2312,7 +2387,8 @@ class App(ttk.Frame):
         self.output_path_button = ttk.Button(
             final, text=tr("main.copy_path"), command=self._copy_output_path, state="disabled"
         )
-        ttk.Label(final, textvariable=self.output_folder_var).grid(
+        self.output_folder_label = ttk.Label(final, textvariable=self.output_folder_var)
+        self.output_folder_label.grid(
             row=3, column=1, sticky="w", padx=(8, 8), pady=(5, 0)
         )
         self.output_path_button.grid(row=3, column=2, sticky="e", pady=(4, 0))
@@ -2329,11 +2405,12 @@ class App(ttk.Frame):
         self.summary_check_button.grid(
             row=4, column=0, columnspan=3, sticky="w", pady=(12, 0)
         )
-        ttk.Label(
+        self.summary_help_label = ttk.Label(
             final,
             text=tr("main.summary_help"),
             wraplength=760,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=(20, 0), pady=(2, 0))
+        )
+        self.summary_help_label.grid(row=5, column=0, columnspan=3, sticky="w", padx=(20, 0), pady=(2, 0))
         self.advanced_toggle.grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 0))
         self.advanced_frame = ttk.Frame(final, padding=(8, 8, 0, 0))
         self.advanced_visible = False
@@ -2396,7 +2473,7 @@ class App(ttk.Frame):
 
         activity = ttk.LabelFrame(layout, text=tr("main.activity"), padding=12)
         self.activity_frame = activity
-        activity.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        activity.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         activity.columnconfigure(0, weight=1)
         activity_header = ttk.Frame(activity)
         activity_header.grid(row=0, column=0, sticky="ew")
@@ -2426,7 +2503,8 @@ class App(ttk.Frame):
         self.log_panel.grid(row=4, column=0, sticky="ew", pady=(8, 0))
 
         result = ttk.LabelFrame(layout, text=tr("main.result"), padding=12)
-        result.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+        self.result_frame = result
+        result.grid(row=5, column=0, sticky="ew", pady=(0, 8))
         result.columnconfigure(0, weight=1)
         self.result_summary_var = tk.StringVar(value=tr("main.result_pending"))
         ttk.Label(result, textvariable=self.result_summary_var, wraplength=780).grid(
@@ -2438,8 +2516,11 @@ class App(ttk.Frame):
         ttk.Label(result, textvariable=self.summary_result_var, wraplength=780).grid(
             row=2, column=0, sticky="w", pady=(5, 0)
         )
+        ttk.Label(result, textvariable=self.result_cost_var, wraplength=780).grid(
+            row=3, column=0, sticky="w", pady=(5, 0)
+        )
         result_buttons = ttk.Frame(result)
-        result_buttons.grid(row=3, column=0, sticky="w", pady=(8, 0))
+        result_buttons.grid(row=4, column=0, sticky="w", pady=(8, 0))
         self.open_result_button = ttk.Button(
             result_buttons, text=tr("main.open_srt"), command=self._open_result, state="disabled"
         )
@@ -2459,12 +2540,28 @@ class App(ttk.Frame):
         self.new_work_button = ttk.Button(
             result_buttons, text=tr("main.new_job"), command=self._new_work
         )
+        self.open_original_button = ttk.Button(
+            result_buttons, text=tr("guided.open_original"),
+            command=self._open_original_transcription,
+        )
 
         footer = ttk.Frame(shell, padding=(12, 8))
         footer.grid(row=1, column=0, sticky="ew")
         ttk.Separator(footer).pack(fill="x", pady=(0, 8))
+        self.decision_cost_label = ttk.Label(
+            footer, textvariable=self.decision_cost_var, wraplength=730,
+        )
+        self.decision_cost_label.pack(fill="x", pady=(0, 3))
+        self.decision_hint_label = ttk.Label(
+            footer, text=tr("guided.cost.disclaimer"),
+        )
+        self.decision_hint_label.pack(anchor="w", pady=(0, 6))
         actions = ttk.Frame(footer)
+        self.footer_actions = actions
         actions.pack(fill="x")
+        self.back_button = ttk.Button(
+            actions, text=tr("guided.back"), command=self._guided_back
+        )
         self.cancel_button = ttk.Button(
             actions, text=tr("main.cancel"), command=self.cancel, state="disabled"
         )
@@ -2704,32 +2801,39 @@ class App(ttk.Frame):
 
     def _refresh_work_summary(self) -> None:
         if self._active_download():
-            title = "Video da link"
+            title = tr("main.from_link")
             dialog = self.download_dialog
             if dialog and dialog.metadata:
                 title = str(dialog.metadata.get("title") or title)
-            self.work_summary_var.set(f"Download · {title}")
+            self.work_summary_var.set(tr("guided.summary.download", name=title))
             return
         if not self.media:
-            self.work_summary_var.set(tr("main.choose_source"))
+            self.work_summary_var.set(
+                (tr("guided.srt.title") + (" · " + Path(self.translation_source).name
+                   if getattr(self, "translation_source", None) else ""))
+                if getattr(self, "guided_route", "") == "srt"
+                else Path(self.translation_source).name
+                if getattr(self, "translation_source", None) else tr("main.choose_source")
+            )
             return
         name = Path(self.video_var.get() or self.media.path).name
         language = self.target_language.get()
-        if language_code(language) == "original":
-            language = "lingua originale"
         interval = ""
         try:
             start, end = self._read_interval()
-            interval = f" · intervallo {format_time_value(start)}–{format_time_value(end)}"
+            interval = tr(
+                "guided.range.summary",
+                start=format_time_value(start), end=format_time_value(end),
+            )
         except StartTimeError:
             pass
         if self.translation_worker:
-            self.work_summary_var.set(f"Traduzione in {language.lower()} · {name}")
+            self.work_summary_var.set(tr("guided.summary.translation", language=language.lower(), name=name))
         elif self.worker:
-            self.work_summary_var.set(f"Trascrizione · {name}{interval}")
+            self.work_summary_var.set(tr("guided.summary.transcription", name=name, interval=interval))
         else:
             self.work_summary_var.set(
-                f"Sottotitoli in {language.lower()} · {name}{interval}"
+                tr("guided.summary.ready", language=language.lower(), name=name, interval=interval)
             )
 
     def _update_source_path(self, *_args: object) -> None:
@@ -2757,6 +2861,9 @@ class App(ttk.Frame):
         if self.worker or self.translation_worker or getattr(self, "summary_worker", None) or self._active_download():
             return
         self._clear_translation_flow()
+        self.guided_route = "home"
+        self.guided_page = "home"
+        self.transcription_ready = False
         self.download_state = "inattivo"
         self.media = None
         self.video_var.set("")
@@ -2769,6 +2876,7 @@ class App(ttk.Frame):
         self.cost_var.set(tr("main.estimate_video"))
         self.status_var.set(tr("main.select_media_to_start"))
         self.result_summary_var.set("Il file comparirà qui al termine del lavoro.")
+        self.result_cost_var.set("")
         self.summary_checkbox_var.set(False)
         self.summary_requested = False
         self.summary_waiting_for_approval = False
@@ -2818,6 +2926,15 @@ class App(ttk.Frame):
     def _clear_previous_media_result(self) -> None:
         """Detach every result and resumable reference owned by the prior video."""
         self._clear_translation_flow()
+        self.transcription_ready = False
+        if hasattr(self, "target_language"):
+            self.target_language.set(language_label("original"))
+        if hasattr(self, "target_language_var"):
+            self.target_language_var.set("original")
+        if hasattr(self, "translation_target_var"):
+            self.translation_target_var.set("original")
+        if hasattr(self, "translation_context_var"):
+            self.translation_context_var.set("")
         self.summary_estimate_revision += 1
         while True:
             try:
@@ -2847,6 +2964,8 @@ class App(ttk.Frame):
         self.summary_estimate_var.set("")
         self.summary_result_var.set("")
         self.result_summary_var.set(tr("main.result_pending"))
+        if hasattr(self, "result_cost_var"):
+            self.result_cost_var.set("")
         self.output_var.set("")
         self.open_result_button.configure(state="disabled")
         self.show_finder_button.configure(state="disabled")
@@ -2880,6 +2999,8 @@ class App(ttk.Frame):
         # previous media immediately so a cancelled or slow transfer can never
         # leave video A looking like the source of the upcoming job B.
         self._clear_previous_media_result()
+        self.guided_route = "media"
+        self.guided_page = "source"
         self.media = None
         self.video_var.set("")
         self.track_var.set("")
@@ -3156,13 +3277,24 @@ class App(ttk.Frame):
 
     def _final_language_changed(self, _event: object | None = None) -> None:
         if _event is not None and (
-            not self.media or self.worker or self.translation_worker
-            or self.summary_worker or self._active_download() or self._busy
+            (not self.media and not getattr(self, "transcription_ready", False))
+            or self.worker or self.translation_worker
+            or self.summary_worker or self._active_download()
         ):
             return
         target = language_code(self.target_language.get()) or "original"
         self.target_language_var.set(target)
         self.translation_target_var.set(target)
+        if getattr(self, "transcription_ready", False) and self.translation_source:
+            self._set_translation_destination(target)
+            if target == "original" or target == self.translation_source_var.get():
+                self._cancel_translation_estimate()
+                self.translation_estimate_var.set(tr("guided.original_ready"))
+            else:
+                self._update_translation_estimate()
+            self._set_workflow_controls(True)
+            self._update_footer_state()
+            return
         self.translation_estimate_var.set(
             "Verrà salvata la trascrizione nella lingua parlata."
             if target == "original"
@@ -3193,12 +3325,24 @@ class App(ttk.Frame):
             or getattr(self, "summary_worker", None)
             or active_download
             or getattr(self, "_busy", False)
+            or (getattr(self, "active_revision_dialog", None) is not None
+                and self.active_revision_dialog.winfo_exists())
         )
 
+    def _revision_dialog_open(self) -> bool:
+        dialog = self.active_revision_dialog
+        return bool(dialog and dialog.winfo_exists())
+
     def _set_workflow_controls(self, enabled: bool) -> None:
+        if getattr(self, "active_revision_dialog", None) is not None:
+            enabled = enabled and not self.active_revision_dialog.winfo_exists()
         self._workflow_controls_enabled = enabled
         video_ready = enabled and self.media is not None
-        translation_ready = video_ready and self._translation_options_needed()
+        translation_ready = enabled and (
+            (video_ready and self._translation_options_needed())
+            or (getattr(self, "transcription_ready", False)
+                and (language_code(self.target_language.get()) or "original") != "original")
+        )
         standalone_tools_state = (
             "disabled" if self._standalone_tools_busy() else "normal"
         )
@@ -3225,7 +3369,6 @@ class App(ttk.Frame):
                 self.advanced_toggle.configure(text=tr("main.advanced_show"))
                 self.model_summary_label.grid_remove()
             self._refresh_work_summary()
-        combo_state = "readonly" if video_ready else "disabled"
         for widget in (self.choose_video_button, self.link_button):
             widget.configure(state="normal" if enabled else "disabled")
         if hasattr(self, "work_summary_var"):
@@ -3251,8 +3394,12 @@ class App(ttk.Frame):
         self.track.configure(
             state="readonly" if video_ready and self.media.audio_tracks else "disabled"
         )
-        self.source_language.configure(state=combo_state)
-        self.target_language.configure(state=combo_state)
+        self.source_language.configure(
+            state="readonly" if video_ready or (enabled and getattr(self, "transcription_ready", False)) else "disabled"
+        )
+        self.target_language.configure(
+            state="readonly" if video_ready or (enabled and getattr(self, "transcription_ready", False)) else "disabled"
+        )
         self.translation_model_combo.configure(
             state="readonly" if translation_ready else "disabled"
         )
@@ -3280,8 +3427,13 @@ class App(ttk.Frame):
             self.master.tools_menu.entryconfigure(
                 index, state=standalone_tools_state
             )
-        if hasattr(self, "translate_srt_button"):
-            self.translate_srt_button.configure(state=standalone_tools_state)
+        for name in (
+            "translate_srt_button", "revise_srt_button",
+            "readability_srt_button", "srt_home_button",
+        ):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.configure(state=standalone_tools_state)
         language_state = "normal" if enabled and not (
             getattr(self, "worker", None) or getattr(self, "translation_worker", None)
             or getattr(self, "summary_worker", None)
@@ -3293,7 +3445,243 @@ class App(ttk.Frame):
                 self.language_menu.entryconfigure(index, state=language_state)
         self.master.after_idle(self._update_footer_state)
 
+    def _start_media_route(self) -> None:
+        if self._standalone_tools_busy():
+            return
+        self.guided_route = "media"
+        self.guided_page = "transcription" if self.media else "source"
+        self._update_footer_state()
+
+    def _show_srt_tools(self) -> None:
+        if self._standalone_tools_busy():
+            return
+        self.guided_route = "srt"
+        self.guided_page = "srt"
+        self._update_footer_state()
+
+    def _guided_back(self) -> None:
+        if self._standalone_tools_busy():
+            return
+        page = self.guided_page
+        if page in {"source", "srt"}:
+            self.guided_route = "home"
+            self.guided_page = "home"
+        elif page == "transcription":
+            self.guided_page = "source"
+        elif page == "translation":
+            self.guided_page = "transcription"
+        self._update_footer_state()
+
+    def _open_original_transcription(self) -> None:
+        if self.translation_source and Path(self.translation_source).is_file():
+            open_path(self.translation_source)
+
+    def _apply_guided_view(self) -> None:
+        """One page at a time; workers and saved jobs remain independent of layout."""
+        if not hasattr(self, "home_frame"):
+            return
+        busy = bool(
+            self.worker or self.translation_worker or self.summary_worker
+            or self._active_download() or self._busy
+        )
+        page = self.guided_page
+        if busy and not (page == "source" and self._active_download()):
+            page = "processing"
+        for frame in (
+            self.home_frame, self.srt_tools_frame, self.source_frame,
+            self.final_frame, self.activity_frame, self.result_frame,
+        ):
+            frame.grid_remove()
+        if page == "home":
+            self.home_frame.grid()
+        elif page == "srt":
+            self.srt_tools_frame.grid()
+        elif page == "source":
+            self.source_frame.grid()
+            self.link_button.grid()
+            if self.media:
+                self.choose_video_button.grid()
+            self.track_label.grid_remove()
+            self.track.grid_remove()
+            self.speech_row.grid_remove()
+            if self._active_download() or self.download_state in {"interrotto", "errore"}:
+                self.activity_frame.grid()
+        elif page == "transcription":
+            self.source_frame.grid()
+            self.final_frame.grid()
+            self.choose_video_button.grid()
+            self.link_button.grid()
+            self.track_label.grid()
+            self.track.grid()
+            self.speech_row.grid()
+            self.target_row.grid_remove()
+            self.range_label.grid()
+            self.range_frame.grid()
+            self.output_label.grid()
+            self.output_entry.grid()
+            self.choose_output_button.grid()
+            self.output_folder_label.grid()
+            self.output_path_button.grid()
+            self.summary_check_button.grid()
+            self.summary_help_label.grid()
+            self.advanced_toggle.grid_remove()
+            self.advanced_frame.grid_remove()
+            self.model_summary_label.grid_remove()
+        elif page == "translation":
+            self.source_frame.grid()
+            self.final_frame.grid()
+            self.result_frame.grid()
+            self.choose_video_button.grid_remove()
+            self.link_button.grid_remove()
+            self.track_label.grid_remove()
+            self.track.grid_remove()
+            self.speech_row.grid()
+            self.target_row.grid()
+            self.range_label.grid_remove()
+            self.range_frame.grid_remove()
+            self.output_label.grid_remove()
+            self.output_entry.grid_remove()
+            self.choose_output_button.grid_remove()
+            self.output_folder_label.grid_remove()
+            self.output_path_button.grid_remove()
+            self.summary_check_button.grid_remove()
+            self.summary_help_label.grid_remove()
+            self.open_original_button.pack(side="left", padx=(0, 8))
+        elif page == "processing":
+            self.activity_frame.grid()
+            if self.media:
+                self.source_frame.grid()
+                self.choose_video_button.grid_remove()
+                self.link_button.grid_remove()
+            if self.translation_source and Path(self.translation_source).is_file():
+                self.result_frame.grid()
+                self.open_original_button.pack(side="left", padx=(0, 8))
+        elif page == "result":
+            self.result_frame.grid()
+            if self.translation_source and Path(self.translation_source).is_file():
+                self.open_original_button.pack(side="left", padx=(0, 8))
+        if page not in {"translation", "processing", "result"}:
+            self.open_original_button.pack_forget()
+        if page == "processing":
+            phase = tr("guided.phase.processing", name=Path(self.video_var.get()).name or tr("app.name"))
+        elif page == "result" and self.guided_route == "srt":
+            phase = tr("guided.phase.srt_result")
+        elif (page == "result" and self.translation_source and self.final_output_path
+              and self.final_output_path != Path(self.translation_source)):
+            phase = tr("guided.phase.result_translation")
+        else:
+            phase = tr(f"guided.phase.{page}")
+        self.phase_var.set(phase)
+
+    def _update_guided_footer(self) -> None:
+        self._refresh_work_summary()
+        self._apply_guided_view()
+        self.decision_hint_label.pack_forget()
+        for widget in (
+            self.start_button, self.resume_button, self.cancel_button,
+            self.footer_open_button, self.summary_button, self.back_button,
+            self.show_finder_button, self.show_issues_button,
+            self.open_summary_button, self.new_work_button,
+        ):
+            widget.pack_forget()
+        busy = bool(self.worker or self.translation_worker or self.summary_worker or self._active_download())
+        if busy:
+            self.decision_cost_var.set("")
+            self.cancel_button.configure(
+                text=tr("main.cancel") if not self.cancel_requested else tr("main.cancel") + "…",
+                state="disabled" if self.cancel_requested else "normal",
+            )
+            self.cancel_button.pack(side="right")
+            return
+        if self._revision_dialog_open():
+            self.decision_cost_var.set("")
+            self.start_button.configure(
+                text=tr("guided.srt.active"), state="disabled",
+            )
+            self.start_button.pack(side="right")
+            return
+        if self._busy:
+            self.decision_cost_var.set("")
+            return
+        page = self.guided_page
+        if page not in {"home", "result"}:
+            self.back_button.pack(side="left")
+        if self.summary_waiting_for_approval:
+            self.decision_cost_var.set(self.summary_estimate_var.get())
+            self.decision_hint_label.pack(anchor="w", pady=(0, 6), before=self.footer_actions)
+            self.summary_button.pack(side="right")
+            return
+        if self.final_output_path and self.final_output_path.is_file() and page == "result":
+            self.decision_cost_var.set("")
+            self.footer_open_button.pack(side="right")
+            self.new_work_button.pack(side="left", padx=(6, 0))
+            self.show_finder_button.pack(side="left", padx=(6, 0))
+            if self.result_report_path and self.result_report_path.is_file():
+                self.show_issues_button.pack(side="left", padx=(6, 0))
+            if self.summary_output and self.summary_output.is_file():
+                self.open_summary_button.pack(side="left", padx=(6, 0))
+            return
+        if self.job_resumable and self.current_job_path and self.current_job_path.is_file():
+            self.decision_cost_var.set("")
+            self.resume_button.configure(
+                text=tr("guided.resume.translation" if self.translation_job_path else "guided.resume.transcription"),
+                command=self.resume,
+            )
+            self.resume_button.pack(side="right")
+            return
+        if self.download_state in {"interrotto", "errore"} and self.download_dialog and self.download_dialog.winfo_exists():
+            self.decision_cost_var.set("")
+            self.resume_button.configure(text=tr("main.resume"), command=self._resume_current_download)
+            self.resume_button.pack(side="right")
+            return
+        if page == "home":
+            self.decision_cost_var.set("")
+            self.start_button.configure(text=tr("guided.media.title"), command=self._start_media_route, state="normal")
+            self.start_button.pack(side="right")
+        elif page == "source":
+            self.decision_cost_var.set("")
+            self.start_button.configure(
+                text=tr("guided.continue") if self.media else tr("main.choose_video"),
+                command=(lambda: self._start_media_route()) if self.media else self.choose_video,
+                state="normal",
+            )
+            self.start_button.pack(side="right")
+        elif page == "transcription":
+            if self.transcription_ready:
+                self.decision_cost_var.set(tr("guided.original_ready"))
+                self.start_button.configure(text=tr("guided.continue"), command=self._continue_to_translation, state="normal")
+            else:
+                self.decision_cost_var.set(self.cost_var.get())
+                self.decision_hint_label.pack(anchor="w", pady=(0, 6), before=self.footer_actions)
+                try:
+                    valid = bool(self.media and self.output_var.get() and self.track.current() >= 0)
+                    if valid:
+                        self._read_interval()
+                except StartTimeError:
+                    valid = False
+                self.start_button.configure(
+                    text=tr("main.generate_transcription"), command=self.start,
+                    state="normal" if valid and not self.workflow_active else "disabled",
+                )
+            self.start_button.pack(side="right")
+        elif page == "translation":
+            self.decision_cost_var.set(self.translation_estimate_var.get())
+            target = language_code(self.target_language.get()) or "original"
+            source = self.translation_source_var.get()
+            if target == "original" or source == target:
+                self.start_button.configure(text=tr("guided.use_original"), command=self._use_original, state="normal")
+            else:
+                self.decision_hint_label.pack(anchor="w", pady=(0, 6), before=self.footer_actions)
+                self.start_button.configure(
+                    text=tr("main.start_translation"), command=self._start_translation,
+                    state="normal" if self.translation_captions and source in LANGUAGE_NAMES else "disabled",
+                )
+            self.start_button.pack(side="right")
+
     def _update_footer_state(self) -> None:
+        if hasattr(self, "guided_route"):
+            self._update_guided_footer()
+            return
         if hasattr(self, "work_summary_var"):
             self._refresh_work_summary()
             for widget in (
@@ -3367,8 +3755,9 @@ class App(ttk.Frame):
 
     def _source_language_changed(self, _event: object | None = None) -> None:
         if _event is not None and (
-            not self.media or self.worker or self.translation_worker
-            or self.summary_worker or self._active_download() or self._busy
+            (not self.media and not getattr(self, "transcription_ready", False))
+            or self.worker or self.translation_worker
+            or self.summary_worker or self._active_download()
         ):
             return
         self._set_workflow_controls(
@@ -3380,6 +3769,9 @@ class App(ttk.Frame):
         selected = language_code(self.source_language.get()) or "auto"
         self.source_language_var.set(selected)
         self.translation_source_var.set(selected)
+        if getattr(self, "transcription_ready", False):
+            self._final_language_changed()
+            return
         if selected != "auto" and selected == self.translation_target_var.get():
             if self.translation_source and self.final_output_path:
                 self._publish_readable_copy(
@@ -3487,8 +3879,102 @@ class App(ttk.Frame):
         self._set_workflow_controls(True)
         self._update_translation_estimate()
 
+    def _set_translation_destination(self, target: str) -> None:
+        """Choose a fresh final file without changing the saved transcription."""
+        if not self.translation_source:
+            return
+        source = Path(self.translation_source)
+        if target == "original" or target == self.translation_source_var.get():
+            self.final_output_path = source
+            return
+        stem = source.stem.removesuffix(".original")
+        candidate = source.with_name(f"{stem}.{target}.srt")
+        index = 2
+        while candidate.exists():
+            candidate = source.with_name(f"{stem}.{target}-{index}.srt")
+            index += 1
+        self.final_output_path = candidate
+
+    def _prepare_guided_translation(self, result: dict[str, Any]) -> None:
+        """Expose the explicit second decision after saving the original SRT."""
+        self._clear_translation_flow()
+        self.translation_source = str(result["output"])
+        self.translation_captions = load_captions(self.translation_source)
+        source = str(result.get("effective_language") or result.get("source_language") or "auto")
+        if source not in LANGUAGE_NAMES:
+            source = "auto"
+        self.translation_source_var.set(source)
+        if source in LANGUAGE_NAMES:
+            self.source_language_var.set(source)
+            self.source_language.set(language_label(source))
+        target = language_code(self.target_language.get()) or "original"
+        self.translation_target_var.set(target)
+        self._set_translation_destination(target)
+        self.transcription_ready = True
+        self.ready_to_translate = True
+        self.workflow_active = False
+        self.job_resumable = False
+        self.guided_route = "media"
+        self.guided_page = "translation"
+        if self.transcription_job_path:
+            self.current_job_path = self.transcription_job_path / "job.json"
+            try:
+                manifest = load_job(self.transcription_job_path)
+                manifest.update({
+                    "workflow_stage": "ready_to_translate",
+                    "transcription_output": str(Path(self.translation_source).resolve()),
+                })
+                save_job(self.transcription_job_path, manifest)
+            except (OSError, ValueError, KeyError):
+                pass
+        self.status_var.set(tr("guided.transcription_ready"))
+        self.result_summary_var.set(
+            tr(
+                "guided.captions.count", count=len(self.translation_captions),
+                name=Path(self.translation_source).name,
+            )
+        )
+        self._set_workflow_controls(True)
+        if target == "original" or target == source:
+            self.translation_estimate_var.set(tr("guided.original_ready"))
+        else:
+            self._update_translation_estimate()
+        self._update_footer_state()
+
+    def _continue_to_translation(self) -> None:
+        if self.transcription_ready:
+            self.guided_page = "translation"
+            self._update_footer_state()
+
+    def _use_original(self) -> None:
+        if not self.transcription_ready or not self.translation_source:
+            return
+        source = Path(self.translation_source)
+        if not source.is_file():
+            self.status_var.set(tr("main.result_pending"))
+            return
+        self.ready_to_translate = False
+        self.guided_page = "result"
+        self.final_output_path = source
+        self._set_result(source)
+        self.status_var.set(tr("guided.original_ready"))
+        if self.transcription_job_path:
+            try:
+                manifest = load_job(self.transcription_job_path)
+                manifest["workflow_stage"] = "completed"
+                manifest["final_output"] = str(source.resolve())
+                save_job(self.transcription_job_path, manifest)
+            except (OSError, ValueError, KeyError):
+                pass
+        if self.summary_requested:
+            self._prepare_summary_for_srt(
+                source, self.translation_source_var.get(),
+                parent_job=self.transcription_job_path,
+            )
+        self._update_footer_state()
+
     def open_download_dialog(self) -> None:
-        if self.worker or self.translation_worker or self.summary_worker or self._active_download() or self.workflow_active or self._busy:
+        if self.worker or self.translation_worker or self.summary_worker or self._active_download() or self.workflow_active or self._busy or getattr(self, "_revision_dialog_open", lambda: False)():
             messagebox.showinfo(
                 "Lavoro in corso",
                 "Completa o interrompi il lavoro corrente prima di scaricare un altro file.",
@@ -3509,13 +3995,25 @@ class App(ttk.Frame):
 
     def _set_result(self, path: str | Path, report: str | Path | None = None) -> None:
         result = Path(path)
+        if hasattr(self, "guided_route") and self.guided_route != "srt":
+            self.guided_route = "media"
+            self.guided_page = "result"
+        elif hasattr(self, "guided_route"):
+            self.guided_page = "result"
         self.output_var.set(str(result))
         self.final_output_path = result
         self.result_report_path = Path(report) if report else None
         self.result_summary_var.set(
-            f"SRT pronto · {result.name}"
+            tr("guided.result.ready", name=result.name)
             + (" · rapporto di controllo disponibile" if report else "")
         )
+        if hasattr(self, "result_cost_var"):
+            self.result_cost_var.set(
+                ((self.cost_var.get() + "\n") if self.media else "")
+                + self.translation_estimate_var.get()
+                if self.translation_source and result != Path(self.translation_source)
+                else self.cost_var.get() if self.media else ""
+            )
         def count_captions() -> None:
             try:
                 count = len(load_captions(str(result)))
@@ -3743,6 +4241,18 @@ class App(ttk.Frame):
         if self.summary_output and self.summary_output.is_file():
             open_path(self.summary_output)
 
+    def _cancel_translation_estimate(self) -> None:
+        """Discard a pending local estimate when translation is no longer needed."""
+        self.translation_estimate_revision += 1
+        if self.translation_estimate_after:
+            try:
+                self.master.after_cancel(self.translation_estimate_after)
+            except tk.TclError:
+                pass
+            self.translation_estimate_after = None
+        if not (self.worker or self.translation_worker or self.summary_worker):
+            self._set_busy(False)
+
     def _update_translation_estimate(self, _event: object | None = None) -> None:
         if self.translation_worker:
             return
@@ -3772,11 +4282,14 @@ class App(ttk.Frame):
         self.translation_estimate_revision += 1
         revision = self.translation_estimate_revision
         if self.translation_estimate_after:
-            self.master.after_cancel(self.translation_estimate_after)
+            try:
+                self.master.after_cancel(self.translation_estimate_after)
+            except tk.TclError:
+                pass
         captions = list(self.translation_captions)
         model = self.translation_model_var.get()
         context = self.translation_context_var.get()
-        self.translation_estimate_var.set("Aggiorno la stima…")
+        self.translation_estimate_var.set(tr("guided.translation.calculating"))
         self._set_busy(True)
         self.translation_estimate_after = self.master.after(
             300, lambda: threading.Thread(
@@ -3818,18 +4331,17 @@ class App(ttk.Frame):
             )
             self.master.after_idle(self._update_footer_state)
             return
-        qualifier = " (approssimativa)" if estimate.approximate else ""
+        qualifier = " (approximate)" if estimate.approximate and get_locale() == "en" else " (approssimativa)" if estimate.approximate else ""
         self.translation_estimate_var.set(
-            f"Traduzione: {estimate.group_count} gruppi · circa "
-            + self._format_cost(estimate.cost_usd) + qualifier + ". "
-            "Stima, non limite massimo di spesa."
+            tr(
+                "guided.translation.estimate", groups=estimate.group_count,
+                cost=self._format_cost(estimate.cost_usd), qualifier=qualifier,
+            )
         )
         self.progress.configure(maximum=max(1, estimate.group_count), value=0)
         if self.worker is None and self.translation_worker is None:
             self._set_busy(False)
-        self.status_var.set(
-            "Trascrizione pronta. Premi Avvia traduzione per creare l’SRT finale."
-        )
+        self.status_var.set(tr("guided.translation.pending"))
         self.master.after_idle(self._update_footer_state)
 
     def _start_translation(self) -> None:
@@ -3920,7 +4432,7 @@ class App(ttk.Frame):
             self.master.destroy()
 
     def choose_video(self) -> None:
-        if self.worker or self.translation_worker or self._active_download() or self.workflow_active or self._busy:
+        if self.worker or self.translation_worker or self._active_download() or self.workflow_active or self._busy or getattr(self, "_revision_dialog_open", lambda: False)():
             messagebox.showinfo(
                 "Lavoro in corso",
                 "Interrompi o completa il lavoro prima di cambiare file multimediale.",
@@ -3931,6 +4443,8 @@ class App(ttk.Frame):
         )
         if not selected:
             return
+        self.guided_route = "media"
+        self.guided_page = "source"
         self._clear_translation_flow()
         self.download_state = "inattivo"
         self.master.minsize(760, 630)
@@ -3997,6 +4511,8 @@ class App(ttk.Frame):
         # Used by both local-file selection and completed downloads: do not let
         # any result, translation or resume reference from video A leak into B.
         self._clear_previous_media_result()
+        self.guided_route = "media"
+        self.guided_page = "transcription"
         self._set_busy(False)
         self.media = media
         self.video_var.set(media.path)
@@ -4076,11 +4592,10 @@ class App(ttk.Frame):
 
         selected_seconds = end_seconds - start_seconds
         self.cost_var.set(
-            f"Durata da elaborare: {selected_seconds / 60:.1f} minuti · "
-            f"stima trascrizione: {self._format_cost(estimate_cost_usd(selected_seconds), 2)}"
-            + (
-                " · traduzione stimata dopo la trascrizione"
-                if self.target_language.get() != "Originale" else ""
+            tr(
+                "guided.transcription.estimate",
+                minutes=selected_seconds / 60,
+                cost=self._format_cost(estimate_cost_usd(selected_seconds), 2),
             )
         )
         self._enable_start()
@@ -4110,7 +4625,7 @@ class App(ttk.Frame):
         self.master.after_idle(self._update_footer_state)
 
     def start(self) -> None:
-        if not self.media or self.worker or self.translation_worker or self.summary_worker or self._active_download() or self.workflow_active:
+        if not self.media or self.worker or self.translation_worker or self.summary_worker or self._active_download() or self.workflow_active or getattr(self, "_revision_dialog_open", lambda: False)():
             return
         try:
             start_seconds, end_seconds = self._read_interval()
@@ -4134,6 +4649,9 @@ class App(ttk.Frame):
             messagebox.showerror("Traccia audio", "Scegli una traccia audio.")
             return
         self._clear_translation_flow()
+        self.transcription_ready = False
+        self.guided_route = "media"
+        self.guided_page = "transcription"
         track = self.media.audio_tracks[track_index]
         source_language = language_code(self.source_language.get()) or "auto"
         target_language = language_code(self.target_language.get()) or "original"
@@ -4287,6 +4805,8 @@ class App(ttk.Frame):
         if selected_path.name == "revision.json":
             try:
                 manifest, _estimate = load_revision_for_resume(job_dir)
+                if not manifest.get("parent_job") and hasattr(self, "guided_route"):
+                    self.guided_route = "srt"
                 if manifest.get("status") == "completed":
                     report = manifest.get("issue_report")
                     self._set_result(
@@ -4346,6 +4866,10 @@ class App(ttk.Frame):
             self.translation_model_var.set(
                 str(manifest.get("target_model", MODEL_SOL))
             )
+            if hasattr(self, "translation_provider_var"):
+                self.translation_provider_var.set(
+                    str(manifest.get("translation_provider", PROVIDER_OPENAI))
+                )
             self.translation_model_combo.set(self.translation_model_var.get())
             self.translation_context_var.set(
                 str(manifest.get("translation_context", ""))
@@ -4355,6 +4879,21 @@ class App(ttk.Frame):
             )))
             self.output_var.set(str(self.final_output_path))
             if manifest.get("status") == "completed":
+                if manifest.get("workflow_stage") == "ready_to_translate":
+                    transcript = Path(str(manifest.get("transcription_output") or manifest["output"]))
+                    if not transcript.is_file():
+                        raise ValueError("L'SRT originale non si trova più nel percorso salvato.")
+                    detected = manifest.get("detected_languages") or []
+                    source = str(manifest.get("source_language", "auto"))
+                    if source == "auto":
+                        source = str(detected[0]) if len(detected) == 1 else "auto"
+                    self._prepare_guided_translation({
+                        "output": str(transcript),
+                        "source_language": source,
+                        "effective_language": source,
+                        "target_language": target,
+                    })
+                    return
                 if target == "original":
                     self.status_var.set(f"Trascrizione completata: {manifest['output']}")
                     self._set_result(manifest["output"])
@@ -4455,6 +4994,9 @@ class App(ttk.Frame):
     def _resume_revision_job(
         self, job_dir: Path, manifest: dict[str, Any], api_key: str
     ) -> None:
+        if not manifest.get("parent_job") and hasattr(self, "guided_route"):
+            self.guided_route = "srt"
+            self.guided_page = "srt"
         self.current_job_path = job_dir / "revision.json"
         self.translation_job_path = job_dir
         if manifest.get("parent_job"):
@@ -4557,31 +5099,14 @@ class App(ttk.Frame):
                             self.transcription_job_path = Path(result["job_dir"])
                             self.current_job_path = self.transcription_job_path / "job.json"
                         self._finish_worker()
-                        if result.get("target_language") not in {None, "original"}:
-                            try:
-                                self.final_output_path = Path(str(
-                                    result.get("final_output") or self.output_var.get()
-                                ))
-                                self._prepare_translation(result)
-                            except (OSError, ValueError, RevisionError) as exc:
-                                self.status_var.set(
-                                    f"Trascrizione salvata; preparazione traduzione non riuscita: {exc}"
-                                )
-                                self.workflow_active = False
-                                self._set_workflow_controls(True)
-                        else:
-                            self.ready_to_translate = False
-                            self.workflow_active = False
+                        try:
+                            self._prepare_guided_translation(result)
+                        except (OSError, ValueError, RevisionError) as exc:
                             self.status_var.set(
-                                f"Completato: {result['output']}"
+                                f"Trascrizione salvata; preparazione traduzione non riuscita: {exc}"
                             )
-                            self._set_result(result["output"])
-                            if self.summary_requested:
-                                self._prepare_summary_for_srt(
-                                    result["output"],
-                                    str(result.get("effective_language") or ""),
-                                    parent_job=self.transcription_job_path,
-                                )
+                            self.workflow_active = False
+                            self._set_workflow_controls(True)
                     elif kind == "cancelled":
                         self.job_resumable = True
                         self.status_var.set("Interrotto. Premi Riprendi per continuare questo lavoro.")
@@ -4842,7 +5367,9 @@ class App(ttk.Frame):
             filetypes=[("Sottotitoli SRT", "*.srt")],
         )
         if source:
-            RevisionDialog(self.master, source)
+            dialog = RevisionDialog(self.master, source)
+            if hasattr(self, "_register_revision_dialog"):
+                self._register_revision_dialog(dialog)
 
     def translate_existing_srt(self) -> None:
         if not self._tools_available():
@@ -4857,7 +5384,20 @@ class App(ttk.Frame):
             except (OSError, ValueError, RevisionError) as exc:
                 messagebox.showerror("SRT non utilizzabile", str(exc))
                 return
-            RevisionDialog(self.master, source, OPERATION_TRANSLATION, language, "it")
+            dialog = RevisionDialog(self.master, source, OPERATION_TRANSLATION, language, "it")
+            if hasattr(self, "_register_revision_dialog"):
+                self._register_revision_dialog(dialog)
+
+    def _register_revision_dialog(self, dialog: RevisionDialog) -> None:
+        self.active_revision_dialog = dialog
+        self._set_workflow_controls(False)
+
+        def on_destroy(event: tk.Event) -> None:
+            if event.widget is dialog:
+                self.active_revision_dialog = None
+                self._set_workflow_controls(True)
+
+        dialog.bind("<Destroy>", on_destroy, add="+")
 
     def _tools_available(self) -> bool:
         if self._standalone_tools_busy():

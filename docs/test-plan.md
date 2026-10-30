@@ -1,4 +1,20 @@
-# Test plan — SRT Compass 0.16.4
+# Test plan — SRT Compass 0.17.0
+
+The guided-view regression suite covers the initial path selection, saved
+transcription followed by an explicit translation decision, unchanged original
+SRT, a target-language change without a paid request and collision-safe final
+names. Existing media-switch and resume tests cover a second source in the same
+session. The screen sequence and bilingual copy are specified in
+[the guided UX document](ux-guided-0.17.0.md).
+
+The download regression suite covers Dailymotion HLS metadata whose audio-only
+format has an unknown codec but a valid audio extension. All quality choices
+must recognize the track. A metadata-only selector check must choose video and
+audio without downloading the media.
+
+The three-person usability check is a release follow-up until three people
+actually try the paths without instructions. Automated widget and worker tests
+do not count as human usability evidence.
 
 Provider coverage includes simulated OpenAI and DeepSeek structured responses,
 separate usage and pricing, missing-key errors, interruption, resume and legacy

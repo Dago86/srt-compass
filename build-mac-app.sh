@@ -4,7 +4,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/private/tmp}/srt-compass-build.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 DIST_DIR="$BUILD_DIR/dist"
-VERSION="${VERSION:-0.16.4}"
+VERSION="${VERSION:-0.17.0}"
 APP_PATH="$DIST_DIR/SRT Compass.app"
 OUTPUT_DIR="$PROJECT_DIR/dist"
 MAC_ARCH="${MAC_ARCH:-$(uname -m)}"

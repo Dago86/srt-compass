@@ -121,6 +121,8 @@ def list_recent_jobs(limit: int = 50) -> list[dict[str, Any]]:
                 "error": "Errore", "completed": "Completato",
                 "preparing": "In preparazione",
             }.get(status, status)
+            if filename == "job.json" and data.get("workflow_stage") == "ready_to_translate":
+                status = "Trascrizione pronta"
             if filename == "job.json" and data.get("translation_job"):
                 revision_path = Path(str(data["translation_job"])) / "revision.json"
                 try:
@@ -176,7 +178,9 @@ def list_recent_jobs(limit: int = 50) -> list[dict[str, Any]]:
                 "path": record_path, "kind": kind, "name": name,
                 "status": status,
                 "progress": f"{completed}/{groups_total}" if groups_total else "—",
-                "cost": cost_label, "modified": stat.st_mtime,
+                "cost": cost_label, "cost_usd": total_cost,
+                "remaining_cost_usd": remaining_cost,
+                "modified": stat.st_mtime,
                 "details": (
                     f"Modello: {data.get('model', 'non specificato')}; "
                     f"lingue: {data.get('source_language', '—')} → "

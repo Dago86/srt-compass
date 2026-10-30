@@ -119,7 +119,7 @@ def catalog_is_stale(catalog: dict[str, Any], now: datetime | None = None) -> bo
 
 
 def download_catalog(timeout: float = 10.0) -> dict[str, Any]:
-    request = Request(CATALOG_URL, headers={"User-Agent": "srt-compass/0.16.4"})
+    request = Request(CATALOG_URL, headers={"User-Agent": "srt-compass/0.17.0"})
     with urlopen(request, timeout=timeout) as response:
         catalog = json.loads(response.read().decode("utf-8"))
     catalog = validate_catalog(catalog)
@@ -212,7 +212,7 @@ def load_exchange_rate() -> ExchangeRate | None:
 
 
 def refresh_exchange_rate(timeout: float = 10.0) -> ExchangeRate:
-    request = Request(ECB_USD_RATE_URL, headers={"User-Agent": "srt-compass/0.16.4"})
+    request = Request(ECB_USD_RATE_URL, headers={"User-Agent": "srt-compass/0.17.0"})
     with urlopen(request, timeout=timeout) as response:
         root = ElementTree.fromstring(response.read())
     cube = next((element for element in root.iter() if element.attrib.get("currency") == "USD"), None)

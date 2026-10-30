@@ -13,6 +13,24 @@ from video_sottotitoli import recent_jobs
 
 
 class RecentJobsTests(unittest.TestCase):
+    def test_saved_translation_decision_is_available_even_for_original_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            job = root / "jobs" / "sample"
+            job.mkdir(parents=True)
+            (job / "job.json").write_text(json.dumps({
+                "status": "completed", "workflow_stage": "ready_to_translate",
+                "video": "/tmp/lecture.mp4", "output": "/tmp/lecture.srt",
+                "target_language": "original",
+            }), encoding="utf-8")
+            with (
+                patch.object(recent_jobs, "JOBS_DIR", root / "jobs"),
+                patch.object(recent_jobs, "REVISION_JOBS_DIR", root / "revisions"),
+                patch.object(recent_jobs, "DOWNLOAD_JOBS_DIR", root / "downloads"),
+            ):
+                records = recent_jobs.list_recent_jobs()
+            self.assertEqual(records[0]["status"], "Trascrizione pronta")
+
     def test_completed_transcription_with_translation_target_shows_original_ready(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

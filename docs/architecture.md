@@ -1,4 +1,19 @@
-# Architecture — SRT Compass 0.16.4
+# Architecture — SRT Compass 0.17.0
+
+## Guided presentation
+
+The Tk main window renders one guided page at a time: home, source,
+transcription preparation, translation decision, processing or result. The
+fixed footer owns the current primary action and shows its estimate immediately
+above it. A saved original transcript is offered as a decision point; selecting
+a final language only updates a local estimate. Existing-SRT tools remain
+independent of media selection and retain their operation-specific dialogs.
+
+The visual page is separate from worker state: workers, manifests and costs keep
+their existing formats. A completed transcription writes `ready_to_translate`
+to its manifest so reopening Recent jobs restores the translation decision.
+The UI does not infer connections between jobs from similar file names. See
+[the five-view specification](ux-guided-0.17.0.md).
 
 ## Text providers
 

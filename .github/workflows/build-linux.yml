@@ -26,4 +26,4 @@ jobs:
           chmod +x /tmp/appimagetool
           sudo install /tmp/appimagetool /usr/local/bin/appimagetool
       - run: ./scripts/build-linux-appimage.sh
-      - run: sha256sum "dist/SRT Compass 0.16.4 linux-x86_64.AppImage"
+      - run: sha256sum "dist/SRT Compass 0.17.0 linux-x86_64.AppImage"

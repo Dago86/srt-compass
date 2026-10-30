@@ -1,4 +1,10 @@
-# Requirements — SRT Compass 0.16.4
+# Requirements — SRT Compass 0.17.0
+
+The main window presents media creation and existing-SRT work as distinct
+paths. Only fields for the current step are visible. One primary action appears
+in a fixed footer with its relevant local cost estimate directly above it.
+After transcription, the user can choose or change the final language and text
+model before explicitly starting translation; the original SRT remains usable.
 
 Subtitle translation and contextual revision may use OpenAI or DeepSeek. OpenAI
 remains the default and is required for audio transcription and the optional TXT

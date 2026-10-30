@@ -26,4 +26,4 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[packaging]'
       - run: MAC_ARCH=${{ matrix.arch }} ./build-mac-app.sh
-      - run: shasum -a 256 "dist/SRT Compass 0.16.4 macos-${{ matrix.arch }}.dmg"
+      - run: shasum -a 256 "dist/SRT Compass 0.17.0 macos-${{ matrix.arch }}.dmg"
